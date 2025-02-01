@@ -1,0 +1,8 @@
+#Testing files
+testing/
+
+#Virtual env
+.venv/
+
+#cache files
+__pycache__/
