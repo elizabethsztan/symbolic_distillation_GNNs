@@ -7,6 +7,24 @@ import torch
 
 
 def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = False):
+    """
+    Generate dataset using the simulate script from the original paper
+
+    TODO: write the rest of this 
+
+    Args:
+        ns (int, optional): _description_. Defaults to 10000.
+        sim (str, optional): _description_. Defaults to 'r1'.
+        n (int, optional): _description_. Defaults to 3.
+        dim (int, optional): _description_. Defaults to 2.
+        nt (int, optional): _description_. Defaults to 1000.
+        save (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        X, y (tuple) containing:
+            - X (torch tensor):
+            - y (torch tensor)
+    """
 
     n_set = [4, 8]
     sim_sets = [
@@ -21,7 +39,7 @@ def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = Fals
     ]
     
     dt = [ss['dt'][0] for ss in sim_sets if ss['sim'] == sim][0]
-    #title = '{}_n={}_dim={}_nt={}_dt={}'.format(sim, n, dim, nt, dt)
+    title = '{}_n={}_dim={}_nt={}_dt={}'.format(sim, n, dim, nt, dt)
 
     s = SimulationDataset(sim, n=n, dim=dim, nt=nt//2, dt=dt)
     s.simulate(ns)
@@ -31,4 +49,16 @@ def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = Fals
     X = torch.from_numpy(np.concatenate([s.data[:, i] for i in range(0, s.data.shape[1], 5)]))
     y = torch.from_numpy(np.concatenate([accel_data[:, i] for i in range(0, s.data.shape[1], 5)]))
 
+    if save: 
+        torch.save({
+        'X': X,
+        'y': y,
+        'X_shape': X.shape,
+        'y_shape': y.shape
+        }, f"datasets/{title}.pt")
+
     return X, y
+
+def load_data(path):
+    data = torch.load(f"{path}.pt")
+    return data['X'], data['y']
