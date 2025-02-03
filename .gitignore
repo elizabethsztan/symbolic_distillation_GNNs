@@ -6,3 +6,6 @@ testing/
 
 #cache files
 __pycache__/
+
+#datasets (they are big)
+datasets/
