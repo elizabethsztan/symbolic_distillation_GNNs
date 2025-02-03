@@ -1,6 +1,7 @@
-# Particle Simulation System Documentation (MADE USING CLAUDE)
+# Particle Simulation System Documentation
 
 Explanation of the simulation code used in the **original paper**.
+This README was made using Claude
 
 ## Overview
 
