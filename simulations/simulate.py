@@ -233,11 +233,11 @@ class SimulationDataset(object):
 
         @jit
         def force(xt):
-          return -grad(total_potential)(xt)[:, :dim]
+          return -grad(total_potential)(xt)[:, :dim] #force is the negative grad of the potential
 
         @jit
         def acceleration(xt):
-          return force(xt)/xt[:, -1, np.newaxis]
+          return force(xt)/xt[:, -1, np.newaxis] #masses stored in last component of  particle data
 
         vacc = vmap(acceleration, 0, 0)
         # ^ over time
