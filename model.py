@@ -65,7 +65,7 @@ class NBodyGNN(MessagePassing):
     
 class NBodyDataset(Dataset):
     """
-    HCreate pytorch dataset class for our simulation dataset.
+    Create pytorch dataset class for our simulation dataset.
     """
     def __init__(self, data, targets):
         """
