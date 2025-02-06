@@ -46,7 +46,7 @@ class NBodyGNN(MessagePassing):
 
     def message(self, x_i, x_j):
         x = torch.cat((x_i, x_j), dim = -1) #concat along final dimension = features. shape is [batch_size, no_edges, no_features]
-        x = self.edge_model(x) #put thru MLP
+        x = self.edge_model(x) #put thru MLP. MLP only transforms the feature (last) dimension
         return x
 
     def forward(self, x, edge_index): 
@@ -148,7 +148,17 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
 
     return model
 
-def test (test_data, model):
+def test(test_data, model):
+    """
+    Get loss for a test dataset
+
+    Args:
+        test_data (_type_): _description_
+        model (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
 
     input_data, acc = test_data
     dataset = NBodyDataset(input_data, acc)
@@ -169,3 +179,15 @@ def test (test_data, model):
     print('Avg loss: ', avg_loss)
 
     return avg_loss
+
+def message_features(test_data, model):
+    input_data, acc = test_data
+    edge_index = get_edge_index(input_data.shape[1])
+    # Get node pairs
+    x_i = input_data[:, edge_index[0]]  # Shape: [batch_size, num_edges, node_features]
+    x_j = input_data[:, edge_index[1]]
+
+    x = torch.cat((x_i, x_j), dim=-1)
+    edge_output = model.edge_model(x)
+
+    return edge_output 
