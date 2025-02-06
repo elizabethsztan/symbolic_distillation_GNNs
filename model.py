@@ -58,6 +58,7 @@ class NBodyGNN(MessagePassing):
         """
 
         edge_message =  self.propagate(edge_index, x = (x,x)) #use same feature matrix for both source and target nodes (undirected network)
+        #x is shape [batch_size, no_nodes, no_features]
         acc_pred = self.node_model(torch.cat([x, edge_message], dim = -1)) #predict accelerations
 
         return acc_pred
@@ -183,11 +184,7 @@ def test(test_data, model):
 def message_features(test_data, model):
     input_data, acc = test_data
     edge_index = get_edge_index(input_data.shape[1])
-    # Get node pairs
-    x_i = input_data[:, edge_index[0]]  # Shape: [batch_size, num_edges, node_features]
-    x_j = input_data[:, edge_index[1]]
+    edge_message =  model.propagate(edge_index, x = (input_data,input_data))
+    
 
-    x = torch.cat((x_i, x_j), dim=-1)
-    edge_output = model.edge_model(x)
-
-    return edge_output 
+    return edge_message
