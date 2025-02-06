@@ -85,7 +85,7 @@ class NBodyDataset(Dataset):
         acc = self.targets[idx]
         return nodes, acc #inputs and target variables
 
-def train (train_data, val_data, num_epoch, node_dim=6, acc_dim=2, hidden_dim=300):
+def train (train_data, val_data, num_epoch, hidden_dim=300):
     """ Train the GNN
 
     Args:
@@ -106,6 +106,9 @@ def train (train_data, val_data, num_epoch, node_dim=6, acc_dim=2, hidden_dim=30
     input_val, acc_val = val_data
     val_dataset = NBodyDataset(input_val, acc_val)
     val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=True)
+
+    node_dim = input_data.shape[-1]
+    acc_dim = acc.shape[-1]
 
     model = NBodyGNN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
     optimiser = torch.optim.Adam(model.parameters(), weight_decay=1e-8) #L2 regulariser on params
