@@ -62,8 +62,6 @@ class NBodyGNN(MessagePassing):
 
         return acc_pred
     
-    #TODO: Add a testing attribute 
-    
 class NBodyDataset(Dataset):
     """
     HCreate pytorch dataset class for our simulation dataset.
@@ -138,9 +136,9 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
         #validation 
         model.eval()
         val_loss = 0
-        with torch.no_grad():
+        with torch.no_grad(): #stop computing gradients
             for nodes, acc in val_dataloader:
-                acc_pred = model(nodes, edge_index)
+                acc_pred = model(nodes, edge_index) #run forward pass thru model
                 val_loss += criterion(acc_pred, acc).item()
 
         
@@ -149,3 +147,25 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
         print(f'Epoch [{epoch+1}/{num_epoch}], training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
 
     return model
+
+def test (test_data, model):
+
+    input_data, acc = test_data
+    dataset = NBodyDataset(input_data, acc)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+    edge_index = get_edge_index(input_data.shape[1])
+
+    criterion = nn.L1Loss() #can add optionality to change this later on...
+    
+    model.eval()
+    loss = 0
+    with torch.no_grad():
+        for nodes, acc in dataloader:
+            acc_pred = model(nodes, edge_index)
+            loss += criterion(acc_pred, acc).item()
+    
+    avg_loss = loss/len(dataloader)
+    print('Avg loss: ', avg_loss)
+
+    return avg_loss
