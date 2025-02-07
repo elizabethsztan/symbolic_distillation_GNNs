@@ -185,3 +185,6 @@ def message_features(test_data, model):
     #shape is [batch_size, no_nodes, 100]
     
     return edge_message
+
+def kl_div (latents): #check if this works
+    return (latents.softmax(-1) * (latents.log_softmax(-1) - (torch.ones_like(latents)/latents.size(-1)).log())).sum(-1)
