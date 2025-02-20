@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import MessagePassing
 from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
 
 def get_edge_index(num_nodes): #edge index for fully connected graph
     idx = torch.arange(num_nodes)
@@ -120,7 +121,9 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
         
         #set model in training mode
         model.train()
-        for nodes, acc in dataloader:
+
+        pbar = tqdm(dataloader, desc=f"Epoch: {epoch+1}/{num_epoch}")
+        for nodes, acc in pbar:
 
             #training
             optimiser.zero_grad()
@@ -133,6 +136,7 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
             optimiser.step()
 
             total_loss += loss.item()
+            #pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
 
         #validation 
         model.eval()
@@ -142,10 +146,9 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
                 acc_pred = model(nodes, edge_index) #run forward pass thru model
                 val_loss += criterion(acc_pred, acc).item()
 
-        
         avg_loss = total_loss/len(dataloader)
         avg_val_loss = val_loss/len(val_dataloader)
-        print(f'Epoch [{epoch+1}/{num_epoch}], training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
+        print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
 
     return model
 
