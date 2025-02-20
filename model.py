@@ -177,17 +177,20 @@ def test(test_data, model):
 
     return avg_loss
 
-def message_features(test_data, model):
-    """
-    Gets aggregated message features for each node in test data.
-    Essentially aggregated outputs of the edge_model MLP for each node.
-    """
-    input_data, _ = test_data
-    edge_index = get_edge_index(input_data.shape[1])
-    edge_message =  model.propagate(edge_index, x = (input_data,input_data))
-    #shape is [batch_size, no_nodes, 100]
-    
-    return edge_message
+#this returns the aggregated message features. instead i would like the 
 
-def kl_div (latents): #check if this works
-    return (latents.softmax(-1) * (latents.log_softmax(-1) - (torch.ones_like(latents)/latents.size(-1)).log())).sum(-1)
+# def message_features(test_data, model):
+#     """
+#     Gets aggregated message features for each node in test data.
+#     Essentially aggregated outputs of the edge_model MLP for each node.
+#     """
+#     input_data, _ = test_data
+#     edge_index = get_edge_index(input_data.shape[1])
+#     edge_message =  model.propagate(edge_index, x = (input_data,input_data))
+#     #shape is [batch_size, no_nodes, 100]
+    
+#     return edge_message
+
+
+
+
