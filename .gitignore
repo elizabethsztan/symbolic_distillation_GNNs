@@ -9,3 +9,6 @@ __pycache__/
 
 #datasets (they are big)
 datasets/
+
+#saved models
+testing_models/
