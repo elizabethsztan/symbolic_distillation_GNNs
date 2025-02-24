@@ -177,6 +177,30 @@ def train (train_data, val_data, num_epoch, hidden_dim=300, patience = 10):
 
     return model
 
+def save_model(model, directory = "testing_models/model.pt"):
+    checkpoint = {
+        'model_state_dict': model.state_dict(),     # Model weights
+        'edge_model': model.edge_model.state_dict(),  # Edge MLP state
+        'node_model': model.node_model.state_dict(),  # Node MLP state
+        'node_dim': 6,        # Your model's dimensions from __init__
+        'acc_dim': 2,         # Acceleration dimensions (2 for 2D)
+        'hidden_dim': 300     # Hidden layer dimensions
+        }
+    torch.save(checkpoint, f"{directory}")
+    print('Model saved successfully')
+
+def load_model(directory):
+    checkpoint = torch.load(f"{directory}")
+    model = NBodyGNN(
+        node_dim=checkpoint['node_dim'],
+        acc_dim=checkpoint['acc_dim'],
+        hidden_dim=checkpoint['hidden_dim'])
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    print('Model loaded successfully')
+
+    return model
+
 def test(test_data, model):
     """
     Get loss for a test dataset
