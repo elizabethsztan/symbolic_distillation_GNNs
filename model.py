@@ -185,7 +185,7 @@ def save_model(model, directory = "testing_models/model.pt"):
         'node_dim': 6,        # Your model's dimensions from __init__
         'acc_dim': 2,         # Acceleration dimensions (2 for 2D)
         'hidden_dim': 300     # Hidden layer dimensions
-        }
+        } #TODO: add optionality for different dimensions
     torch.save(checkpoint, f"{directory}")
     print('Model saved successfully')
 
