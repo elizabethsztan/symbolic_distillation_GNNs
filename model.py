@@ -85,13 +85,14 @@ class NBodyDataset(Dataset):
         acc = self.targets[idx]
         return nodes, acc #inputs and target variables
 
-def train (train_data, val_data, num_epoch, hidden_dim=300):
+def train (train_data, val_data, num_epoch, hidden_dim=300, patience = 10):
     """ Train the GNN
 
     Args:
         train_data (tuple): contains (input_data, accelerations)
         val_data (tuple): contains (input_data, accelerations)
         num_epoch (int): number of epochs to train on
+        patience (int): number of epochs to wait before implementing early stopping
 
     Returns:
         model (NBodyGNN object): final trained model
@@ -115,6 +116,10 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
     criterion = nn.L1Loss() #MAE loss
 
     edge_index = get_edge_index(input_data.shape[1]) #this never changes so we only calc once
+
+    best_val_loss = float('inf')
+    best_model_state = None
+    counter = 0
 
     for epoch in range (num_epoch):
         total_loss = 0 #loss tracking
@@ -149,6 +154,26 @@ def train (train_data, val_data, num_epoch, hidden_dim=300):
         avg_loss = total_loss/len(dataloader)
         avg_val_loss = val_loss/len(val_dataloader)
         print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
+
+        #check if this is the best loss
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_model_state = model.state_dict().copy()
+            counter = 0
+            print(f"new best validation loss: {best_val_loss:.4f}")
+        
+        else: 
+            counter += 1
+            print(f"EarlyStopping counter: {counter} out of {patience}")
+
+        if counter >= patience:
+            print(f"Early stopping triggered after {epoch+1} epochs")
+            break
+
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        print(f"Loaded best model with validation loss: {best_val_loss:.4f}")
+
 
     return model
 
