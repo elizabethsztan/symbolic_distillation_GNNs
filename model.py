@@ -45,6 +45,10 @@ class NBodyGNN(MessagePassing):
             nn.Linear(hidden_dim, acc_dim) #output = predicted acc
         )
 
+        self.node_dim0 = node_dim
+        self.acc_dim0 = acc_dim
+        self.hidden_dim0 = hidden_dim
+
     def message(self, x_i, x_j):
         x = torch.cat((x_i, x_j), dim = -1) #concat along final dimension = features. shape is [batch_size, no_edges, no_features]
         x = self.edge_model(x) #put thru MLP. MLP only transforms the feature (last) dimension
@@ -256,7 +260,7 @@ def train_L1 (train_data, val_data, num_epoch, hidden_dim=300, patience = 10):
             acc_pred = model(nodes, edge_index) #automatically calls model.forward()
             message_features = model.get_messages() #get message features. of shape [batch_size, num_nodes, 100]
             
-            loss = criterion(acc_pred, acc) + 10e-2 * torch.mean(torch.abs(message_features)) #add L1 regulariser on messages
+            loss = criterion(acc_pred, acc) + 1e-2 * torch.mean(torch.abs(message_features)) #add L1 regulariser on messages
 
             loss.backward()
             optimiser.step()
@@ -305,10 +309,10 @@ def save_model(model, directory = "testing_models/model.pt"):
         'model_state_dict': model.state_dict(),     # Model weights
         'edge_model': model.edge_model.state_dict(),  # Edge MLP state
         'node_model': model.node_model.state_dict(),  # Node MLP state
-        'node_dim': 6,        # Your model's dimensions from __init__
-        'acc_dim': 2,         # Acceleration dimensions (2 for 2D)
-        'hidden_dim': 300     # Hidden layer dimensions
-        } #TODO: add optionality for different dimensions
+        'node_dim': model.node_dim0,        # Your model's dimensions from __init__
+        'acc_dim': model.acc_dim0,         # Acceleration dimensions (2 for 2D)
+        'hidden_dim': model.hidden_dim0    # Hidden layer dimensions
+        } 
     torch.save(checkpoint, f"{directory}")
     print('Model saved successfully')
 
