@@ -13,12 +13,12 @@ def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = Fals
     TODO: write the rest of this 
 
     Args:
-        ns (int, optional): _description_. Defaults to 10000.
-        sim (str, optional): _description_. Defaults to 'r1'.
-        n (int, optional): _description_. Defaults to 3.
-        dim (int, optional): _description_. Defaults to 2.
-        nt (int, optional): _description_. Defaults to 1000.
-        save (bool, optional): _description_. Defaults to False.
+        ns (int): number of simulations to run
+        sim (str): _description_. Defaults to 'r1'.
+        n (int): _description_. Defaults to 3.
+        dim (int): _description_. Defaults to 2.
+        nt (int): _description_. Defaults to 1000.
+        save (bool): _description_. Defaults to False.
 
     Returns:
         X, y (tuple) containing:
