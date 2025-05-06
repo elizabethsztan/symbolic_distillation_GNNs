@@ -1,32 +1,25 @@
 # Generates and saves datasets from the simulate script
-
 import numpy as np
 import simulate
 from simulate import SimulationDataset
+import argparse
 import torch
+import os 
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = False):
+def generate_data(sim = 'r1', save = True):
     """
     Generate dataset using the simulate script from the original paper
 
-    TODO: write the rest of this 
-
-    Args:
-        ns (int): number of simulations to run
-        sim (str): _description_. Defaults to 'r1'.
-        n (int): _description_. Defaults to 3.
-        dim (int): _description_. Defaults to 2.
-        nt (int): _description_. Defaults to 1000.
-        save (bool): _description_. Defaults to False.
-
     Returns:
         X, y (tuple) containing:
-            - X (torch tensor):
+            - X (torch tensor)
             - y (torch tensor)
     """
 
-    n_set = [4, 8]
+    n_set = [4, 8] #could do 8 particles too but just working with 4 for now
     sim_sets = [
     {'sim': 'r1', 'dt': [5e-3], 'nt': [1000], 'n': n_set, 'dim': [2, 3]},
     {'sim': 'r2', 'dt': [1e-3], 'nt': [1000], 'n': n_set, 'dim': [2, 3]},
@@ -37,9 +30,16 @@ def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = Fals
     {'sim': 'damped', 'dt': [2e-2], 'nt': [1000], 'n': n_set, 'dim': [2, 3]},
     {'sim': 'discontinuous', 'dt': [1e-2], 'nt': [1000], 'n': n_set, 'dim': [2, 3]},
     ]
-    
-    dt = [ss['dt'][0] for ss in sim_sets if ss['sim'] == sim][0]
+
+    sim_config = next(s for s in sim_sets if s['sim'] == sim)
+    n = sim_config['n'][0]
+    dim = sim_config['dim'][0]
+    nt = sim_config['nt'][0]
+    dt = sim_config['dt'][0]
+    ns = 10_000
+
     title = '{}_n={}_dim={}_nt={}_dt={}'.format(sim, n, dim, nt, dt)
+    print('Running on', title)
 
     s = SimulationDataset(sim, n=n, dim=dim, nt=nt//2, dt=dt)
     s.simulate(ns)
@@ -50,15 +50,27 @@ def generate_data(ns = 10000, sim = 'r1', n = 3, dim = 2, nt = 1000, save = Fals
     y = torch.from_numpy(np.concatenate([accel_data[:, i] for i in range(0, s.data.shape[1], 5)]))
 
     if save: 
+        save_path = os.path.join(script_dir, f"../datasets/{title}.pt")
         torch.save({
         'X': X,
         'y': y,
         'X_shape': X.shape,
         'y_shape': y.shape
-        }, f"datasets/{title}.pt")
+        }, f"{save_path}")
 
     return X, y
 
-def load_data(path):
-    data = torch.load(f"{path}.pt")
-    return data['X'], data['y']
+# def load_data(path):
+#     data = torch.load(f"{path}.pt")
+#     return data['X'], data['y']
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sim", type=str, required=True)
+    parser.add_argument("--save", action='store_true')
+    args = parser.parse_args()
+
+    _,_ = generate_data (sim = args.sim, save = args.save)
+
+if __name__ == "__main__":
+    main()
