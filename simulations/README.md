@@ -1,119 +1,38 @@
-# Particle Simulation System Documentation
+# Generating the datasets
 
-Explanation of the simulation code used in the **original paper**.
-This README was made using Claude
+Explanation of the simulation code used in the [original paper](https://arxiv.org/abs/2006.11287).
 
 ## Overview
 
-The system simulates particles interacting through various potential functions, supporting different physical scenarios from gravitational systems to charged particles and spring-like connections.
+Generate n-body dataset for particles under different potentials.
+TODO: WRITE THE POTENTIALS
 
-## Core Components
-
-### 1. Class Structure
-
-The main class `SimulationDataset` initializes with the following parameters:
-- `sim`: Simulation type ('r2', 'charge', 'string', etc.)
-- `n`: Number of particles
-- `dim`: Dimensions (2D or 3D)
-- `dt`: Time step size
-- `nt`: Number of time steps
-- `extra_potential`: Optional additional potential field
-
-### 2. Potential Functions
-
-The system supports multiple interaction types through `get_potential()`:
-- 'r2': Inverse square law (gravitational-like)
-- 'r1': Logarithmic potential
-- 'spring': Harmonic oscillator
-- 'charge': Coulomb-like interaction
-- 'string': Connected particles with vertical force
-- 'string_ball': String simulation with barrier
-
-### 3. Simulation Core
-
-The `simulate()` method handles the core simulation logic:
-```python
-def simulate(self, ns, key=0):
-    # ns: Number of simulations
-    # key: Random seed
-```
-
-#### Key Components:
-
-a) Force Calculation
-```python
-def total_potential(xt):
-    # Calculates total potential energy 
-    # by summing pairwise interactions
-```
-
-b) Dynamics
-```python
-def acceleration(xt):
-    # Uses F = ma to derive acceleration from forces
-```
-
-c) ODE Integration
-```python
-def odefunc(y, t):
-    # Defines differential equations for particle motion
-```
-
-### 4. Data Structure
-
-Each particle state contains:
-- Position coordinates (first `dim` values)
-- Velocity coordinates (next `dim` values)
-- Additional parameters (e.g., mass/charge) (last `params` values)
-
-### 5. Visualization
-
-The `plot()` method provides visualization options:
-```python
-def plot(self, i, animate=False, plot_size=True, s_size=1):
-```
-Features:
-- Static or animated trajectories
-- Color-coded particles
-- Mass-scaled markers
-- Motion animation
-
-## Technical Implementation
-
-The code leverages JAX for efficient computation:
-- JIT compilation (`@jit`)
-- Automatic differentiation for force calculation
-- Vectorized operations (`vmap`)
-- ODE integration (`odeint`)
-
-## Initial Conditions
-
-Initial states are generated randomly with specific constraints based on simulation type:
-```python
-def make_sim(key):
-    # Sets random initial positions and velocities
-    # Handles special cases for different simulation types
-```
+- `simulate.py`: simulation script from the original paper.
+- `generate_data.py`: script which produces datasets from `simulate.py`.
 
 ## Usage
 
-1. Create a simulation instance:
-```python
-sim = SimulationDataset(sim='r2', n=5, dim=2)
+From the terminal,
+
+```bash 
+python3 simulations/generate_data.py --sim r2 --save
 ```
 
-2. Run simulations:
+The dataset will save in the `datasets/` folder.
+
+## Dataset
+
+To load the data,
+
 ```python
-sim.simulate(ns=10)  # Run 10 different simulations
+from generate_data import load_data
+X, y = load_data('datasets/file_name.pt') 
 ```
 
-3. Visualize results:
-```python
-sim.plot(i=0)  # Plot first simulation
-```
+The data, `X`
+- of shape (num_datapoints, num_particles, params)
+- params contains (x, y, dx, dy, charge, mass), if in 2D
 
-## Dependencies
-- JAX: Core computation
-- Matplotlib: Visualization
-- NumPy: Array operations
-- Celluloid: Animation support
+The target variables, `y`
+- of shape (num_datapoints, num_particles, 2)
+- last dimension is acceleration in x and y
