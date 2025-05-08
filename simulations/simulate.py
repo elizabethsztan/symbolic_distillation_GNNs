@@ -287,5 +287,3 @@ class SimulationDataset(object):
                 camera.snap()
             from IPython.display import HTML
             return HTML(camera.animate().to_jshtml())
-
-print(1)
