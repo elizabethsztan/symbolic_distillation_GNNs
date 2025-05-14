@@ -29,10 +29,10 @@ from generate_data import load_data
 X, y = load_data('datasets/file_name.pt') 
 ```
 
-The data, `X`
-- of shape (num_datapoints, num_particles, params)
-- params contains (x, y, dx, dy, charge, mass), if in 2D
+The input variables, `X`
+- of shape (num_datapoints, num_particles, particle_features)
+- particle_features contains (x, y, dx, dy, charge, mass), if in 2D
 
 The target variables, `y`
 - of shape (num_datapoints, num_particles, 2)
-- last dimension is acceleration in x and y
+- last dimension is acceleration in x and y (if in 2D)
