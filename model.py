@@ -234,7 +234,13 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
         save_path = f'{script_dir}/model_weights/{dataset_name}/{model_type}'
         os.makedirs(save_path, exist_ok=True)
         #save model weights
-        torch.save(model.state_dict(), f'{save_path}/epoch_{num_epoch}_model.pth')
+        checkpoint = {
+            'model_state_dict': model.state_dict(), 
+            'node_dim': model.node_dim_,
+            'acc_dim': model.acc_dim_, 
+            'hidden_dim': model.hidden_dim_
+        }
+        torch.save(checkpoint, f'{save_path}/epoch_{num_epoch}_model.pth')
         #log training run in json file
         metrics = {'datetime':datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
                    'dataset_name': dataset_name,
@@ -248,4 +254,22 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
         with open(f'{save_path}/epoch_{num_epoch}_metrics.json', 'w') as json_file:
             json.dump(metrics, json_file, indent = 4)
 
+    return model
+
+def load_model(model_path):
+
+    checkpoint = torch.load(model_path)
+    #create a new model
+    model = NBodyGNN(
+        node_dim=checkpoint['node_dim'],
+        acc_dim=checkpoint['acc_dim'],
+        hidden_dim=checkpoint['hidden_dim']
+    )
+
+    #load weights
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    print(f'Model loaded successfully.')
+    
     return model
