@@ -256,9 +256,8 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
 
     return model
 
-def load_model(model_path):
-
-    checkpoint = torch.load(model_path)
+def load_model(dataset_name, model_type, num_epoch):
+    checkpoint = torch.load(f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth')
     #create a new model
     model = NBodyGNN(
         node_dim=checkpoint['node_dim'],
@@ -273,3 +272,35 @@ def load_model(model_path):
     print(f'Model loaded successfully.')
     
     return model
+
+
+def test(model, test_data, model_type = 'standard'):
+
+    input_data, acc = test_data
+    dataset = NBodyDataset(input_data, acc)
+    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
+
+    edge_index = get_edge_index(input_data.shape[1])
+
+    if model_type == 'standard':
+        def regularisation(model):
+            return 0.0
+        
+    elif model_type == 'L1':
+        def regularisation (model):
+            message_features = model.get_messages()
+            return torch.mean(torch.abs(message_features))
+
+    criterion = nn.L1Loss()
+    
+    model.eval()
+    loss = 0
+    with torch.no_grad():
+        for nodes, acc in dataloader:
+            acc_pred = model(nodes, edge_index)
+            loss += criterion(acc_pred, acc).item() + regularisation(model)
+    
+    avg_loss = loss/len(dataloader)
+    print('Avg loss: ', avg_loss)
+
+    return avg_loss
