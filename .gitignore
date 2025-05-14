@@ -12,4 +12,6 @@ __pycache__/
 datasets/
 
 #saved models
-testing_models/
+model_weights/
+
+wandb/
