@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.nn import MessagePassing
-from torch.utils.data import Dataset, DataLoader
+from torch_geometric.data import Data, DataLoader
 from tqdm import tqdm
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import OneCycleLR
@@ -10,38 +10,18 @@ import os
 from datetime import datetime
 import json
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
+# script_dir = os.path.dirname(os.path.abspath(__file__))
+script_dir = os.getcwd()
 
 def get_edge_index(num_nodes): #edge index for fully connected graph
     idx = torch.arange(num_nodes)
     edge_index = torch.cartesian_prod(idx, idx)
     edge_index = edge_index[edge_index[:, 0] != edge_index[:, 1]]
-    return edge_index.t() #output dimension [2, E]
+    return edge_index.t() #output dimension [2, num_edges]
 
 def load_data(path): #load dataset 
     data = torch.load(f"{path}.pt")
     return data['X'], data['y']
-
-class NBodyDataset(Dataset):
-    """
-    Create pytorch dataset class for our simulation dataset.
-    """
-    def __init__(self, data, targets):
-        """
-        Args:
-            data (torch.Tensor): shape is [no_datapoints, no_nodes, no_node_features]
-            targets (torch.Tensor): shape is [no_datapoints, no_nodes, 2d_acceleration]
-        """
-        self.data = data
-        self.targets = targets
-
-    def __len__(self):
-        return len(self.data) #how many samples in dataset to use later for batching
-
-    def __getitem__(self, idx):
-        nodes = self.data[idx]  # shape: [no_nodes, no_node_features] 
-        acc = self.targets[idx]
-        return nodes, acc #inputs and target variables
 
 class NBodyGNN(MessagePassing):
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
@@ -74,67 +54,70 @@ class NBodyGNN(MessagePassing):
             nn.Linear(hidden_dim, acc_dim) #output = predicted acc
         )
 
-        self.message_features = None
-        self.combined_messages = None
-
         self.node_dim_ = node_dim
         self.acc_dim_ = acc_dim
         self.hidden_dim_ = hidden_dim
 
+    def forward(self, x, edge_index):
+        return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
+      
     def message(self, x_i, x_j):
-        x = torch.cat((x_i, x_j), dim = -1) #concat along final dimension = features. shape is [batch_size, no_edges, no_features]
-        message_features = self.edge_model(x) #put thru MLP. MLP only transforms the feature (last) dimension
-        
-        if self.message_features == None:
-            self.message_features = message_features
-        
-        else:
-            self.message_features = torch.cat([self.message_features, message_features], dim=0)
-        
-        return message_features
-
-    def forward(self, x, edge_index): 
-        """Forward pass of this network
-
-        Args:
-            x (torch.Tensor): shape is [batch_size, no_nodes, no_node_features]
-            edge_index (torch.Tensor): shape is [2, no_edges]
-        """
-        self.message_features = None
-        edge_message =  self.propagate(edge_index, x = (x,x)) #use same feature matrix for both source and target nodes (undirected network)
-        #x is shape [batch_size, no_nodes, no_features]
-        acc_pred = self.node_model(torch.cat([x, edge_message], dim = -1)) #predict accelerations
-
-        return acc_pred
+        tmp = torch.cat([x_i, x_j], dim=1)
+        return self.edge_model(tmp)
     
-    def get_messages(self):
-        return self.message_features
+    def update(self, aggr_out, x=None):
+        tmp = torch.cat([x, aggr_out], dim=1)
+        return self.node_model(tmp)
+    
+    def get_predictions(self, data, augment, augmentation = 3):
+        x, edge_index = data.x, data.edge_index
+        if augment:
+            noise = torch.randn(1, self.acc_dim_, device=x.device) * augmentation
+            noise = noise.repeat(x.size(0), 1)
+            
+            # Apply noise to the appropriate dimensions
+            augmented_x = x.clone()
+            for i in range(self.acc_dim_):
+                augmented_x[:, i] += noise[:, i]
+                
+            # Forward pass with noise
+            return self.propagate(edge_index, x=augmented_x)
+        else:
+            # Standard forward pass
+            return self.propagate(edge_index, x=x)
+    
+    def loss(self, data, model_type = 'standard', augment = True):
+        acc_pred = self.get_predictions(data, augment)
+        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss
+        if model_type == 'standard':
+            return loss
+        elif model_type == 'L1':
+            source_nodes = data.x[data.edge_index[0]]
+            target_nodes = data.x[data.edge_index[1]]
+            messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
+            reg_str = 1e-2 #regularisation strength
+            unscaled_reg = reg_str * torch.sum(torch.abs(messages))
+            return loss, unscaled_reg #later scale it according to batch size and num_nodes
+
 
 def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_type = 'standard', save = True, wandb_log = True):
-    """ Train the GNN
 
-    Args:
-        model (NBodyGNN): the model class
-        train_data (tuple): contains (input_data, accelerations)
-        val_data (tuple): contains (input_data, accelerations)
-        num_epoch (int): number of epochs to train on
-
-    Returns:
-        model (NBodyGNN object): final trained model
-    """
+    #setup accelerator
+    accelerator = Accelerator()
+    
     #training data
     input_data, acc = train_data
+    edge_index = get_edge_index(input_data.shape[1]) #this never changes so we only calc once
 
-    if model.node_dim_ != input_data.shape[-1]:
-        assert 'Mismatch in model and data node/particle dimensions.'
-        
-    dataset = NBodyDataset(input_data, acc)   
-    batch_size = int(64*(4/input_data.shape[1])**2) #batch depends on num_nodes
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    assert model.node_dim_ == input_data.shape[-1], 'Mismatch in model and data node/particle dimensions.'
+    
+    dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
+    batch_size = int(64*(4/input_data.shape[1])**2) 
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     #validation data
     input_val, acc_val = val_data
-    val_dataset = NBodyDataset(input_val, acc_val)
+    val_dataset = [Data(x=input_val[i], edge_index=edge_index, y=acc_val[i]) for i in range(len(input_val))]
     val_dataloader = DataLoader(val_dataset, batch_size=1024, shuffle=False)
 
     # node_dim = input_data.shape[-1]
@@ -157,64 +140,63 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     optimiser = torch.optim.Adam(model.parameters(), init_lr, weight_decay=1e-8) #L2 regulariser on params
 
     #load onto GPU
-    accelerator = Accelerator()
     model, dataloader, val_dataloader, optimiser = accelerator.prepare(model, dataloader, val_dataloader, optimiser)
 
     print(f'Running on {accelerator.device}.')
 
     #learning rate scheduler
     scheduler = OneCycleLR(optimiser, max_lr = init_lr, steps_per_epoch = len(dataloader), epochs = num_epoch, final_div_factor = 1e5)
-    criterion = nn.L1Loss() #MAE loss
-
-    #regularisation 
-    if model_type == 'standard':
-        def regularisation(model):
-            return 0.0
-        
-    elif model_type == 'L1':
-        def regularisation (model):
-            message_features = model.get_messages()
-            return torch.mean(torch.abs(message_features))
-
-
-    edge_index = get_edge_index(input_data.shape[1]).to(accelerator.device) #this never changes so we only calc once
 
     losses = []
     val_losses = []
 
-    for epoch in range (num_epoch):
+    batch_per_epoch = int(len(input_data)/batch_size)
+
+    for epoch in range(num_epoch):
         total_loss = 0 #loss tracking
-        
-        #set model in training mode
-        model.train()
-
-        pbar = tqdm(dataloader, desc=f"Epoch: {epoch+1}/{num_epoch}")
-        for nodes, acc in pbar:
-
+        i = 0
+        samples = 0
+        model.train() #set model in training mode
+        while i < batch_per_epoch:
             #training
-            optimiser.zero_grad()
+            for datapoints in tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epoch}"):
+                if i >= batch_per_epoch:
+                    break
+                optimiser.zero_grad()
+                cur_bs = int(datapoints.batch[-1] + 1) #current batch size 
 
-            acc_pred = model(nodes, edge_index) #automatically calls model.forward()
-            
-            loss = criterion(acc_pred, acc) + regularisation(model)
+                if model_type == 'standard':
+                    base_loss = model.loss(datapoints)
+                    loss = base_loss
+                elif model_type == 'L1':
+                    base_loss, unscaled_reg = model.loss(datapoints, model_type = model_type)
+                    loss = (base_loss + unscaled_reg * batch_size / num_nodes)/cur_bs
+                
+                accelerator.backward(loss)
+                optimiser.step()
+                scheduler.step()
 
-            accelerator.backward(loss)
-            optimiser.step()
-            scheduler.step()
+                total_loss += base_loss.item()
+                samples += cur_bs
+                i+=1
 
-            total_loss += loss.item()
-            #pbar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
+        avg_loss = total_loss/samples
 
         #validation once per epoch
         model.eval()
         val_loss = 0
-        with torch.no_grad(): #stop computing gradients
-            for nodes, acc in val_dataloader:
-                acc_pred = model(nodes, edge_index) #run forward pass thru model
-                val_loss += criterion(acc_pred, acc).item()
+        val_samples = 0
+        
+        with torch.no_grad():
+            for datapoints in val_dataloader:
+                cur_bs  = int(datapoints.batch[-1] + 1)
+                loss = model.loss(datapoints, augment=False) #validation loss don't add reg or noise
+                # loss = loss / cur_bs
+                val_loss += loss.item()
+                val_samples += cur_bs 
 
-        avg_loss = total_loss/len(dataloader)
-        avg_val_loss = val_loss/len(val_dataloader)
+        avg_val_loss = val_loss/val_samples
+
         print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
 
         #log to wandb
@@ -273,34 +255,27 @@ def load_model(dataset_name, model_type, num_epoch):
     
     return model
 
-
-def test(model, test_data, model_type = 'standard'):
+def test(model, test_data):
 
     input_data, acc = test_data
-    dataset = NBodyDataset(input_data, acc)
-    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
-
     edge_index = get_edge_index(input_data.shape[1])
-
-    if model_type == 'standard':
-        def regularisation(model):
-            return 0.0
-        
-    elif model_type == 'L1':
-        def regularisation (model):
-            message_features = model.get_messages()
-            return torch.mean(torch.abs(message_features))
-
-    criterion = nn.L1Loss()
+    dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
+    dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
     
     model.eval()
-    loss = 0
-    with torch.no_grad():
-        for nodes, acc in dataloader:
-            acc_pred = model(nodes, edge_index)
-            loss += criterion(acc_pred, acc).item() + regularisation(model)
+    total_loss = 0
+    samples = 0
     
-    avg_loss = loss/len(dataloader)
-    print('Avg loss: ', avg_loss)
-
+    with torch.no_grad():
+        for datapoints in dataloader:
+            # Get batch size
+            cur_bs = int(datapoints.batch[-1] + 1)
+            loss = model.loss(datapoints, augment=False)
+            
+            total_loss += loss.item()
+            samples += cur_bs
+    
+    avg_loss = total_loss / samples
+    print(f'test Loss: {avg_loss:.4f}')
+    
     return avg_loss
