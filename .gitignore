@@ -10,6 +10,7 @@ __pycache__/
 
 #datasets (they are big)
 datasets/
+train_val_test_data/
 
 #saved models
 model_weights/
