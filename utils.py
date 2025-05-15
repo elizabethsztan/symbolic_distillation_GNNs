@@ -3,7 +3,7 @@ from sklearn.model_selection import train_test_split
 import torch
 
 def load_and_process(data_dir, seed):
-    filename = os.path.basename(data_dir).split('.')[0]
+    filename = os.path.basename(data_dir).split('_')[0]
     data_save_path = f'train_val_test_data/{filename}'
     
     if not os.path.exists(data_save_path):
