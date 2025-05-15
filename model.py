@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from torch_geometric.nn import MessagePassing
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import OneCycleLR
