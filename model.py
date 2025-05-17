@@ -44,11 +44,15 @@ class NBodyGNN(MessagePassing):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), 
+            nn.ReLU(),
             nn.Linear(hidden_dim, 100) #output message features of dimension 100 for standard and L1 model 
         )
         #node model MLP
         self.node_model = nn.Sequential(
             nn.Linear(node_dim + 100, hidden_dim), #inputs = sum of outputs of edge model and node features
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -73,23 +77,16 @@ class NBodyGNN(MessagePassing):
     def get_predictions(self, data, augment, augmentation = 3):
         x, edge_index = data.x, data.edge_index
         if augment:
-            noise = torch.randn(1, self.acc_dim_, device=x.device) * augmentation
-            noise = noise.repeat(x.size(0), 1)
-            
-            # Apply noise to the appropriate dimensions
-            augmented_x = x.clone()
-            for i in range(self.acc_dim_):
-                augmented_x[:, i] += noise[:, i]
-                
-            # Forward pass with noise
-            return self.propagate(edge_index, x=augmented_x)
-        else:
-            # Standard forward pass
-            return self.propagate(edge_index, x=x)
+            augmentation = torch.randn(1, self.acc_dim_)*augmentation
+            augmentation = augmentation.repeat(len(x), 1).to(x.device)
+            x = x.index_add(1, torch.arange(self.acc_dim_).to(x.device), augmentation) #add noise to the position coordinates
+
+        return self.propagate(edge_index,size=(x.size(0), x.size(0)), x=x)
+
     
     def loss(self, data, model_type = 'standard', augment = True):
         acc_pred = self.get_predictions(data, augment)
-        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss
+        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
         if model_type == 'standard':
             return loss
         elif model_type == 'L1':
