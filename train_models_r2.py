@@ -16,14 +16,14 @@ def main():
 
     train_data, val_data, _ = load_and_process(data_path, seed)
 
-    print("\n=== Testing 'standard' Model ===")
-    model = NBodyGNN()
-    model = train(model, train_data=train_data, val_data=val_data, num_epoch=3, 
-                 model_type='standard', save=args.save, wandb_log=args.wandb_log)
+    # print("\n=== Testing 'standard' Model ===")
+    # model = NBodyGNN()
+    # model = train(model, train_data=train_data, val_data=val_data, num_epoch=200, 
+    #              model_type='standard', save=args.save, wandb_log=args.wandb_log)
 
     print("\n=== Testing L1 Model ===")
     model = NBodyGNN()
-    model = train(model, train_data=train_data, val_data=val_data, num_epoch=3, 
+    model = train(model, train_data=train_data, val_data=val_data, num_epoch=200, 
                  model_type='L1', save=args.save, wandb_log=args.wandb_log)
 
 if __name__ == "__main__":
