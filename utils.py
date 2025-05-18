@@ -28,3 +28,12 @@ def load_and_process(data_dir, seed):
         test_data = torch.load(os.path.join(data_save_path, 'test_data.pt'))
     
     return train_data, val_data, test_data
+
+def load_data (dataset_name):
+    path = f'train_val_test_data/{dataset_name}'
+
+    train_data = torch.load(os.path.join(path, 'train_data.pt'))
+    val_data = torch.load(os.path.join(path, 'val_data.pt'))
+    test_data = torch.load(os.path.join(path, 'test_data.pt'))
+
+    return train_data, val_data, test_data
