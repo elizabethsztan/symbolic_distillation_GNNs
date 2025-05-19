@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import torch
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 from model import get_edge_index
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
@@ -15,9 +16,19 @@ def get_message_features(model, input_data):
     model.eval()
 
     X_test, y_test = input_data
-
     edge_index = get_edge_index(X_test.shape[1])
-    dataset = [Data(x=X_test[i], edge_index=edge_index, y=y_test[i]) for i in range(len(X_test))]
+
+    # test_idxes = np.random.randint(0, len(X_test), 1000)
+    # dataset = DataLoader(
+    #     [Data(x=X_test[i], edge_index=edge_index, y=y_test[i]) for i in test_idxes],
+    #     batch_size=len(X_test),
+    #     shuffle=False)
+    
+    dataset = DataLoader(
+        [Data(x=X_test[i], edge_index=edge_index, y=y_test[i]) for i in range(len(X_test))],
+        batch_size=len(X_test),
+        shuffle=False)
+
     
     all_message_info = []
     
@@ -84,15 +95,6 @@ def fit_messages(df, msg_array, sim='spring', dim=2):
         expected_forces = -(bd_array - 1)[:, np.newaxis] * pos_array / bd_array[:, np.newaxis]
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
-    
-    #from the colab notebook. sum up all x up without 10% outliers.
-    def percentile_sum(x):
-        x = x.ravel()
-        bot = x.min()
-        top = np.percentile(x, 90)
-        msk = (x >= bot) & (x <= top)
-        frac_good = msk.sum() / len(x)
-        return x[msk].sum() / frac_good if frac_good > 0 else np.inf
 
     #fit linear model with bias: msg1 = a0 + a1 * Fx + a2 * Fy
     reg = LinearRegression()
@@ -190,11 +192,11 @@ def main():
     model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
     _, _, test_data = load_data(args.dataset_name)
     X_test, y_test = test_data
-    cutoff = args.cutoff
+    cutoff = args.cutoff #option to use a smaller subset of the test set 
     if cutoff != 0:
         X_test = X_test[:cutoff]
         y_test = y_test[:cutoff]
-    plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type)
+    plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)
 
 
 if __name__ == "__main__":
