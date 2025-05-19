@@ -38,22 +38,35 @@ class NBodyGNN(MessagePassing):
     
         super().__init__(aggr='add')
 
-        if model_type == 'standard' or model_type == 'L1':
-            message_dim = 100
-
         if model_type == 'bottleneck':
             message_dim = acc_dim #this is the dimensionality of the system
+
+        else: 
+            message_dim = 100
          
         #edge model MLP
-        self.edge_model = nn.Sequential(
-            nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim), 
-            nn.ReLU(),
-            nn.Linear(hidden_dim, message_dim) #output message features of dimension 100 for standard and L1 model 
-        )
+        if model_type == 'KL':
+            self.edge_model = nn.Sequential(
+                nn.Linear(2*node_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), 
+                nn.ReLU(),
+                nn.Linear(hidden_dim, int(message_dim * 2)) #double dimensionality because predicts mean and logvar of messages
+            )
+
+        else:
+            self.edge_model = nn.Sequential(
+                nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.Linear(hidden_dim, hidden_dim), 
+                nn.ReLU(),
+                nn.Linear(hidden_dim, message_dim) #output message features of dimension 100 for standard and L1 model 
+            )
+
         #node model MLP
         self.node_model = nn.Sequential(
             nn.Linear(node_dim + message_dim, hidden_dim), #inputs = sum of outputs of edge model and node features
@@ -76,7 +89,15 @@ class NBodyGNN(MessagePassing):
       
     def message(self, x_i, x_j):
         tmp = torch.cat([x_i, x_j], dim=1)
-        return self.edge_model(tmp)
+        if self.model_type_ != 'KL':
+            return self.edge_model(tmp)
+        else:
+            messages = self.edge_model(tmp)
+            mu = messages[:, 0::2] #all evens are the mus
+            logvar = messages[:,1::2]#all odds are the logvars
+            std = torch.exp(0.5*logvar)
+            eps = torch.randn_like(std) #reparameterisation trick to sample
+            return mu + eps * std
     
     def update(self, aggr_out, x=None):
         tmp = torch.cat([x, aggr_out], dim=1)
@@ -95,15 +116,25 @@ class NBodyGNN(MessagePassing):
     def loss(self, data, augment = True):
         acc_pred = self.get_predictions(data, augment)
         loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
-        if self.model_type_ == 'standard' or self.model_type_ == 'bottleneck':
-            return loss
-        elif self.model_type_ == 'L1':
+
+        if self.model_type_ == 'L1':
             source_nodes = data.x[data.edge_index[0]]
             target_nodes = data.x[data.edge_index[1]]
             messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
             reg_str = 1e-2 #regularisation strength
             unscaled_reg = reg_str * torch.sum(torch.abs(messages))
             return loss, unscaled_reg #later scale it according to batch size and num_nodes
+        elif self.model_type_ == 'KL':
+            source_nodes = data.x[data.edge_index[0]]
+            target_nodes = data.x[data.edge_index[1]]
+            messages = self.message(source_nodes, target_nodes) 
+            mu = messages[:, 0::2]
+            logvar = messages[:,1::2]
+            reg_str = 1
+            unscaled_reg = reg_str * torch.sum(torch.exp(logvar) + mu**2 - logvar)/2
+            return loss, unscaled_reg
+        else:
+            return loss
 
 
 def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = True, wandb_log = True):
@@ -184,7 +215,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
                 if model_type == 'standard' or model_type == 'bottleneck':
                     base_loss = model.loss(datapoints)
                     loss = base_loss
-                elif model_type == 'L1':
+                elif model_type == 'L1' or model_type == 'KL':
                     base_loss, unscaled_reg = model.loss(datapoints)
                     loss = (base_loss + unscaled_reg * batch_size / num_nodes)/cur_bs
                 
