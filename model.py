@@ -25,7 +25,7 @@ def load_data(path): #load dataset
     return data['X'], data['y']
 
 class NBodyGNN(MessagePassing):
-    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300, message_dim = 100):
+    def __init__(self, model_type = 'standard', node_dim = 6, acc_dim = 2, hidden_dim = 300, message_dim = 100):
         """ 
         N-body graph NN class.
 
@@ -37,6 +37,12 @@ class NBodyGNN(MessagePassing):
         """
     
         super().__init__(aggr='add')
+
+        if model_type == 'standard' or model_type == 'L1':
+            message_dim = 100
+
+        if model_type == 'bottleneck':
+            message_dim = acc_dim #this is the dimensionality of the system
          
         #edge model MLP
         self.edge_model = nn.Sequential(
@@ -62,6 +68,7 @@ class NBodyGNN(MessagePassing):
         self.node_dim_ = node_dim
         self.acc_dim_ = acc_dim
         self.hidden_dim_ = hidden_dim
+        self.model_type_ = model_type
         self.message_dim_ = message_dim
 
     def forward(self, x, edge_index):
@@ -85,12 +92,12 @@ class NBodyGNN(MessagePassing):
         return self.propagate(edge_index,size=(x.size(0), x.size(0)), x=x)
 
     
-    def loss(self, data, model_type = 'standard', augment = True):
+    def loss(self, data, augment = True):
         acc_pred = self.get_predictions(data, augment)
         loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
-        if model_type == 'standard':
+        if self.model_type_ == 'standard' or self.model_type_ == 'bottleneck':
             return loss
-        elif model_type == 'L1':
+        elif self.model_type_ == 'L1':
             source_nodes = data.x[data.edge_index[0]]
             target_nodes = data.x[data.edge_index[1]]
             messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
@@ -99,7 +106,9 @@ class NBodyGNN(MessagePassing):
             return loss, unscaled_reg #later scale it according to batch size and num_nodes
 
 
-def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_type = 'standard', save = True, wandb_log = True):
+def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = True, wandb_log = True):
+
+    model_type = model.model_type_
 
     #setup accelerator
     accelerator = Accelerator()
@@ -108,14 +117,14 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     input_data, acc = train_data
     edge_index = get_edge_index(input_data.shape[1]) #this never changes so we only calc once
 
+    # node_dim = input_data.shape[-1]
+    num_nodes = input_data.shape[1]
+    acc_dim = acc.shape[-1]
+
     assert model.node_dim_ == input_data.shape[-1], 'Mismatch in model and data node/particle dimensions.'
 
     if model_type == 'bottleneck':
-        assert model.message_dim_ == acc.shape[1], 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
-
-    if model.message_dim_ == acc.shape[1] and model_type != 'bottleneck':
-        model_type = 'bottleneck'
-        print('Model type changed to bottleneck.')
+        assert model.message_dim_ == acc_dim, 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
     
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     batch_size = int(64*(4/input_data.shape[1])**2) 
@@ -125,10 +134,6 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     input_val, acc_val = val_data
     val_dataset = [Data(x=input_val[i], edge_index=edge_index, y=acc_val[i]) for i in range(len(input_val))]
     val_dataloader = DataLoader(val_dataset, batch_size=1024, shuffle=False)
-
-    # node_dim = input_data.shape[-1]
-    num_nodes = input_data.shape[1]
-    acc_dim = acc.shape[-1]
 
     if wandb_log:
         mode = 'online'
@@ -154,7 +159,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     if num_epoch > 30:
         scheduler = CosineAnnealingLR(optimiser, T_max = len(dataloader)*num_epoch)
         scheduler_name = 'CosineAnnealingLR'
-    else:
+    else: #OneCycleLR for quick training
         scheduler = OneCycleLR(optimiser, max_lr = init_lr, steps_per_epoch = len(dataloader), epochs = num_epoch, final_div_factor = 1e5)
         scheduler_name = 'OneCycleLR'
 
@@ -180,7 +185,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
                     base_loss = model.loss(datapoints)
                     loss = base_loss
                 elif model_type == 'L1':
-                    base_loss, unscaled_reg = model.loss(datapoints, model_type = model_type)
+                    base_loss, unscaled_reg = model.loss(datapoints)
                     loss = (base_loss + unscaled_reg * batch_size / num_nodes)/cur_bs
                 
                 accelerator.backward(loss)
@@ -232,6 +237,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
             'node_dim': model.node_dim_,
             'acc_dim': model.acc_dim_, 
             'hidden_dim': model.hidden_dim_, 
+            'model_type': model.model_type_,
             'message_dim': model.message_dim_
         }
         torch.save(checkpoint, f'{save_path}/epoch_{num_epoch}_model.pth')
@@ -258,7 +264,8 @@ def load_model(dataset_name, model_type, num_epoch):
         node_dim=checkpoint['node_dim'],
         acc_dim=checkpoint['acc_dim'],
         hidden_dim=checkpoint['hidden_dim'], 
-        message_dim=checkpoint['message_dim']
+        message_dim=checkpoint['message_dim'], 
+        model_type=checkpoint['model_type']
     )
 
     #load weights
