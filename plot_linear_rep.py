@@ -41,6 +41,8 @@ def get_message_features(model, input_data):
             #get output from the edge_model MLP
             x = torch.cat((source_nodes, target_nodes), dim=1)
             messages = model.edge_model(x)
+            if model.model_type_ == 'KL':
+                messages = messages[:, 0::2] #for KL model, take means of the messages
             message_info = torch.cat((source_nodes, target_nodes, messages), dim=1)
             all_message_info.append(message_info) #collect message info for all edges in each graph
     
