@@ -25,7 +25,7 @@ def load_data(path): #load dataset
     return data['X'], data['y']
 
 class NBodyGNN(MessagePassing):
-    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300, message_dim = 100):
         """ 
         N-body graph NN class.
 
@@ -46,11 +46,11 @@ class NBodyGNN(MessagePassing):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim), 
             nn.ReLU(),
-            nn.Linear(hidden_dim, 100) #output message features of dimension 100 for standard and L1 model 
+            nn.Linear(hidden_dim, message_dim) #output message features of dimension 100 for standard and L1 model 
         )
         #node model MLP
         self.node_model = nn.Sequential(
-            nn.Linear(node_dim + 100, hidden_dim), #inputs = sum of outputs of edge model and node features
+            nn.Linear(node_dim + message_dim, hidden_dim), #inputs = sum of outputs of edge model and node features
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -62,6 +62,7 @@ class NBodyGNN(MessagePassing):
         self.node_dim_ = node_dim
         self.acc_dim_ = acc_dim
         self.hidden_dim_ = hidden_dim
+        self.message_dim_ = message_dim
 
     def forward(self, x, edge_index):
         return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
@@ -108,6 +109,12 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     edge_index = get_edge_index(input_data.shape[1]) #this never changes so we only calc once
 
     assert model.node_dim_ == input_data.shape[-1], 'Mismatch in model and data node/particle dimensions.'
+    if model_type == 'bottleneck':
+        assert model.message_dim_ != acc.shape[1], 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
+
+    if model.message_dim_ == acc.shape[1]:
+        model_type = 'bottleneck'
+        print('Model type changed to bottleneck.')
     
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     batch_size = int(64*(4/input_data.shape[1])**2) 
@@ -168,7 +175,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
                 optimiser.zero_grad()
                 cur_bs = int(datapoints.batch[-1] + 1) #current batch size 
 
-                if model_type == 'standard':
+                if model_type == 'standard' or model_type == 'bottleneck':
                     base_loss = model.loss(datapoints)
                     loss = base_loss
                 elif model_type == 'L1':
