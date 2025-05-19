@@ -5,7 +5,7 @@ from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 from accelerate import Accelerator
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR
 import wandb
 import os
 from datetime import datetime
@@ -143,7 +143,12 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     print(f'Running on {accelerator.device}.')
 
     #learning rate scheduler
-    scheduler = OneCycleLR(optimiser, max_lr = init_lr, steps_per_epoch = len(dataloader), epochs = num_epoch, final_div_factor = 1e5)
+    if num_epoch > 30:
+        scheduler = CosineAnnealingLR(optimiser, T_max = len(dataloader)*num_epoch)
+        scheduler_name = 'CosineAnnealingLR'
+    else:
+        scheduler = OneCycleLR(optimiser, max_lr = init_lr, steps_per_epoch = len(dataloader), epochs = num_epoch, final_div_factor = 1e5)
+        scheduler_name = 'OneCycleLR'
 
     losses = []
     val_losses = []
@@ -226,6 +231,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
                    'dataset_name': dataset_name,
                    'model_type': model_type,
                    'epochs': num_epoch,
+                   'scheduler': scheduler_name,
                    'num_nodes': num_nodes,
                    'dimensions': acc_dim, 
                    'train_loss': losses,
