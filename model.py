@@ -212,10 +212,10 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
                 optimiser.zero_grad()
                 cur_bs = int(datapoints.batch[-1] + 1) #current batch size 
 
-                if model_type == 'standard' or model_type == 'bottleneck':
+                if model_type in {'standard', 'bottleneck'}:
                     base_loss = model.loss(datapoints)
                     loss = base_loss
-                elif model_type == 'L1' or model_type == 'KL':
+                else:
                     base_loss, unscaled_reg = model.loss(datapoints)
                     loss = (base_loss + unscaled_reg * batch_size / num_nodes)/cur_bs
                 
@@ -237,8 +237,10 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
         with torch.no_grad():
             for datapoints in val_dataloader:
                 cur_bs  = int(datapoints.batch[-1] + 1)
-                loss = model.loss(datapoints, augment=False) #validation loss don't add reg or noise
-                # loss = loss / cur_bs
+                if model_type in {'standard', 'bottleneck'}:
+                    loss = model.loss(datapoints, augment=False) #validation loss don't add reg or noise
+                else: 
+                    loss,_ = model.loss(datapoints, augment=False)
                 val_loss += loss.item()
                 val_samples += cur_bs 
 
