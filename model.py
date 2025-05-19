@@ -109,10 +109,11 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
     edge_index = get_edge_index(input_data.shape[1]) #this never changes so we only calc once
 
     assert model.node_dim_ == input_data.shape[-1], 'Mismatch in model and data node/particle dimensions.'
-    if model_type == 'bottleneck':
-        assert model.message_dim_ != acc.shape[1], 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
 
-    if model.message_dim_ == acc.shape[1]:
+    if model_type == 'bottleneck':
+        assert model.message_dim_ == acc.shape[1], 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
+
+    if model.message_dim_ == acc.shape[1] and model_type != 'bottleneck':
         model_type = 'bottleneck'
         print('Model type changed to bottleneck.')
     
@@ -230,7 +231,8 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', model_typ
             'model_state_dict': model.state_dict(), 
             'node_dim': model.node_dim_,
             'acc_dim': model.acc_dim_, 
-            'hidden_dim': model.hidden_dim_
+            'hidden_dim': model.hidden_dim_, 
+            'message_dim': model.message_dim_
         }
         torch.save(checkpoint, f'{save_path}/epoch_{num_epoch}_model.pth')
         #log training run in json file
@@ -255,7 +257,8 @@ def load_model(dataset_name, model_type, num_epoch):
     model = NBodyGNN(
         node_dim=checkpoint['node_dim'],
         acc_dim=checkpoint['acc_dim'],
-        hidden_dim=checkpoint['hidden_dim']
+        hidden_dim=checkpoint['hidden_dim'], 
+        message_dim=checkpoint['message_dim']
     )
 
     #load weights
