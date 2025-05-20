@@ -1,12 +1,14 @@
 #Testing files
 old_notebooks/
 testing.ipynb
+bad_results/
 
 #Virtual env
 .venv/
 
 #cache files
 __pycache__/
+outputs/
 
 #datasets (they are big)
 datasets/
