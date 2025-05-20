@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from model import get_edge_index
+# from model import get_edge_index
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import os
-from model import load_model
+from model import load_model, get_edge_index
 from utils import load_data
 import argparse
 
@@ -51,7 +51,7 @@ def get_message_features(model, input_data):
     message_info = message_info.numpy()
     
     #create a dataframe to store node info
-    node_info = ['x', 'y', 'delta_x', 'delta_y', 'q', 'm'] #only in 2d for now
+    node_info = ['x', 'y', 'nu_x', 'nu_y', 'q', 'm'] #only in 2d for now
     source_cols = [f'{f}1' for f in node_info]
     target_cols = [f'{f}2' for f in node_info]
 
@@ -63,15 +63,15 @@ def get_message_features(model, input_data):
     df = pd.DataFrame(message_info, columns=columns)
     
     #calculate distances
-    df['x_dist'] = df.x1 - df.x2
-    df['y_dist'] = df.y1 - df.y2
-    df['r'] = np.sqrt(df.x_dist**2 + df.y_dist**2)
-    df['bd'] = df['r'] + 1e-2 #TODO: Double check what exactly this is. Related to spring force
+    df['dx'] = df.x1 - df.x2
+    df['dy'] = df.y1 - df.y2
+    df['r'] = np.sqrt(df.dx**2 + df.dy**2)
+    df['bd'] = df.r + 1e-2 #TODO: Double check what exactly this is. Related to spring force
     
     #calculate relative velocities 
-    df['dvx'] = df.delta_x1 - df.delta_x2
-    df['dvy'] = df.delta_y1 - df.delta_y2
-    df['v_rel'] = np.sqrt(df.dvx**2 + df.dvy**2)
+    df['dnu_x'] = df.nu_x1 - df.nu_x2
+    df['dnu_y'] = df.nu_y1 - df.nu_y2
+    df['dnu'] = np.sqrt(df.dnu_x**2 + df.dnu_y**2)
     
     #extract just the message features
     msg_array = df[message_cols].values #of shape [num_datapoints*(2*num_edges), msg_dim]
@@ -90,11 +90,11 @@ def fit_messages(df, msg_array, sim='spring', dim=2):
     
     #calculate forces based on simulation
     if sim == 'spring':
-        pos_cols = ['x_dist', 'y_dist']
+        dir_cols = ['dx', 'dy']
         bd_array = np.array(df['bd'])
-        pos_array = np.array(df[pos_cols])
+        dir_array = np.array(df[dir_cols])
         #true force for spring (returns force for each edge x and y direction)
-        expected_forces = -(bd_array - 1)[:, np.newaxis] * pos_array / bd_array[:, np.newaxis]
+        expected_forces = -(bd_array - 1)[:, np.newaxis] * dir_array / bd_array[:, np.newaxis]
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
 
