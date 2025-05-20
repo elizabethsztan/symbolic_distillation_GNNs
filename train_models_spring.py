@@ -23,11 +23,11 @@ def main():
     # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
     #               save=args.save, wandb_log=args.wandb_log)
 
-    # print("\n=== Testing L1 Model ===")
-    # model_type = 'L1'
-    # model = NBodyGNN(model_type = model_type)
-    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
-    #               save=args.save, wandb_log=args.wandb_log)
+    print("\n=== Testing L1 Model ===")
+    model_type = 'L1'
+    model = NBodyGNN(model_type = model_type)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
     
     # print("\n=== Testing bottleneck Model ===")
     # model_type = 'bottleneck'
@@ -35,11 +35,11 @@ def main():
     # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
     #               save=args.save, wandb_log=args.wandb_log)
     
-    print("\n=== Testing KL Model ===")
-    model_type = 'KL'
-    model = NBodyGNN(model_type = model_type)
-    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
-                  save=args.save, wandb_log=args.wandb_log)
+    # print("\n=== Testing KL Model ===")
+    # model_type = 'KL'
+    # model = NBodyGNN(model_type = model_type)
+    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'spring', num_epoch=args.epoch,
+    #               save=args.save, wandb_log=args.wandb_log)
     
 
 if __name__ == "__main__":
