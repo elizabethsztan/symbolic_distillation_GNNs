@@ -42,8 +42,12 @@ def get_message_features(model, input_data):
             x = torch.cat((source_nodes, target_nodes), dim=1)
             messages = model.edge_model(x)
             if model.model_type_ == 'KL':
-                messages = messages[:, 0::2] #for KL model, take means of the messages
-            message_info = torch.cat((source_nodes, target_nodes, messages), dim=1)
+                logvar = messages[:,1::2] #for KL model, take means and logvar of the messages
+                messages = messages[:, 0::2] 
+                message_info = torch.cat((source_nodes, target_nodes, messages, logvar), dim=1)
+            else:
+                message_info = torch.cat((source_nodes, target_nodes, messages), dim=1)
+
             all_message_info.append(message_info) #collect message info for all edges in each graph
     
     #combine message info
@@ -55,9 +59,15 @@ def get_message_features(model, input_data):
     source_cols = [f'{f}1' for f in node_info]
     target_cols = [f'{f}2' for f in node_info]
 
-    msg_dim = messages.shape[-1] #this is 100 usually
+    msg_dim = messages.shape[-1] #this is 100 unless bottleneck
     message_cols = [f'e{i}' for i in range(msg_dim)] 
-    columns = source_cols + target_cols + message_cols
+
+    if model.model_type_ == 'KL':
+        logvar_cols = [f'logvar{i}' for i in range(msg_dim)]
+        columns = source_cols + target_cols + message_cols + logvar_cols
+    
+    else:
+        columns = source_cols + target_cols + message_cols
     
     #make a dataframe with all the relevent information 
     df = pd.DataFrame(message_info, columns=columns)
@@ -66,7 +76,7 @@ def get_message_features(model, input_data):
     df['dx'] = df.x1 - df.x2
     df['dy'] = df.y1 - df.y2
     df['r'] = np.sqrt(df.dx**2 + df.dy**2)
-    df['bd'] = df.r + 1e-2 #TODO: Double check what exactly this is. Related to spring force
+    df['bd'] = df.r + 1e-2 #this is the displacement 
     
     #calculate relative velocities 
     df['dnu_x'] = df.nu_x1 - df.nu_x2
@@ -76,14 +86,27 @@ def get_message_features(model, input_data):
     #extract just the message features
     msg_array = df[message_cols].values #of shape [num_datapoints*(2*num_edges), msg_dim]
     
-    return df, msg_array
+    if model.model_type_ == 'KL':
+        logvar_array = df[logvar_cols]
+        return df, [msg_array, logvar_array]
+    else:
+        return df, msg_array
 
 def fit_messages(df, msg_array, sim='spring', dim=2):
 
-    #find important features
-    msg_importance = msg_array.std(axis=0) #computes stds for each msg_dim over all datapoints
-    most_important = np.argsort(msg_importance)[-dim:] #msg of highest std
-    msgs_to_compare = msg_array[:, most_important]
+    if 'logvar0' in df.columns: #this means that we are doing the KL variation 
+        logvar_array = msg_array[1]
+        msg_array = msg_array[0]
+        KL_div =  (np.exp(logvar_array) + msg_array**2 - logvar_array)/2
+        KL_mean = KL_div.mean(axis=0)
+        most_important = np.argsort(KL_mean)[-dim:]
+        msgs_to_compare = msg_array[:, most_important]
+
+    else:
+        #find important features
+        msg_importance = msg_array.std(axis=0) #computes stds for each msg_dim over all datapoints
+        most_important = np.argsort(msg_importance)[-dim:] #msg of highest std
+        msgs_to_compare = msg_array[:, most_important]
     
     #normalise the message elements
     msgs_to_compare = (msgs_to_compare - np.average(msgs_to_compare, axis=0)) / np.std(msgs_to_compare, axis=0)
