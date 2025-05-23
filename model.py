@@ -25,7 +25,7 @@ def load_data(path): #load dataset
     return data['X'], data['y']
 
 class NBodyGNN(MessagePassing):
-    def __init__(self, model_type = 'standard', node_dim = 6, acc_dim = 2, hidden_dim = 300, message_dim = 100):
+    def __init__(self, model_type = 'standard', node_dim = 6, acc_dim = 2, hidden_dim = 300):
         """ 
         N-body graph NN class.
 
@@ -40,6 +40,12 @@ class NBodyGNN(MessagePassing):
 
         if model_type == 'bottleneck':
             message_dim = acc_dim #this is the dimensionality of the system
+        
+        elif model_type == 'pruning':
+            self.initial_message_dim = 100
+            self.target_message_dim = acc_dim #towards the end of training, prune all except 2 messages
+            self.current_message_dim = message_dim  
+            message_dim = self.initial_message_dim
 
         else: 
             message_dim = 100
@@ -84,14 +90,60 @@ class NBodyGNN(MessagePassing):
         self.model_type_ = model_type
         self.message_dim_ = message_dim
 
+        if model_type == 'pruning':
+            self.pruning_schedule = None 
+            self.pruning_mask = torch.ones(message_dim, dtype=torch.bool) #this is set during training
+    
+    def set_pruning_schedule (self, total_epochs):
+
+        prune_start_epoch = total_epochs // 3  #start pruning after 1/3 of training
+        prune_epochs = total_epochs - prune_start_epoch
+        
+        dims_to_prune = self.initial_message_dim - self.target_message_dim #we need to prune 98 dims
+        
+        #create pruning schedule - exp decay in number of active dimensions
+        schedule = {}
+        for epoch in range(prune_start_epoch, total_epochs):
+            progress = (epoch - prune_start_epoch) / prune_epochs
+            target_dims = self.initial_message_dim - int(dims_to_prune * (progress ** 2))
+            target_dims = max(target_dims, self.target_message_dim)
+            schedule[epoch] = target_dims
+            
+        self.pruning_schedule = schedule
+
+    def update_pruning_mask(self, epoch, sample_data):
+        target_dims = self.pruning_schedule[epoch] #dims we need to reduce active units to
+
+        with torch.no_grad():
+            all_messages = []
+            for datapoint in sample_data: #collect the messages from the validation set 
+                x, edge_index = datapoint.x, datapoint.edge_index
+                source_nodes = x[edge_index[0]]
+                target_nodes = x[edge_index[1]]
+                messages = self.message(source_nodes, target_nodes)
+                all_messages.append(messages)
+
+            msg_array = torch.cat(all_messages, dim=0)  #[num_messages, message_dim]
+            msg_importance = msg_array.std(dim=0)  #computes stds for each msg_dim over all datapoints
+            most_important = torch.argsort(msg_importance)[-target_dims:] #chooses the messages w highest std
+
+            new_mask = torch.zeros_like(self.pruning_mask) 
+            new_mask[most_important] = True #mask all unimportant messages
+            self.pruning_mask = new_mask
+            self.current_message_dim = target_dims
+
     def forward(self, x, edge_index):
         return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
       
     def message(self, x_i, x_j):
         tmp = torch.cat([x_i, x_j], dim=1)
         if self.model_type_ != 'KL':
+            #apply pruning mask if this is a pruning model
+            if self.model_type_ == 'pruning':
+                messages = messages * self.pruning_mask.to(messages.device).float()
             return self.edge_model(tmp)
-        else:
+        
+        else: #for KL model you need to sample messages
             messages = self.edge_model(tmp)
             mu = messages[:, 0::2] #all evens are the mus
             logvar = messages[:,1::2]#all odds are the logvars
@@ -100,6 +152,11 @@ class NBodyGNN(MessagePassing):
             return mu + eps * std
     
     def update(self, aggr_out, x=None):
+
+        if self.model_type_ == 'pruning':
+            #apply mask to messages for pruning model
+            aggr_out = aggr_out * self.pruning_mask.to(aggr_out.device).float()
+
         tmp = torch.cat([x, aggr_out], dim=1)
         return self.node_model(tmp)
     
@@ -117,17 +174,19 @@ class NBodyGNN(MessagePassing):
         acc_pred = self.get_predictions(data, augment)
         loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
 
+        source_nodes = data.x[data.edge_index[0]]
+        target_nodes = data.x[data.edge_index[1]]
+
         if self.model_type_ == 'L1':
-            source_nodes = data.x[data.edge_index[0]]
-            target_nodes = data.x[data.edge_index[1]]
+
             messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
             reg_str = 1e-2 #regularisation strength
             unscaled_reg = reg_str * torch.sum(torch.abs(messages))
             return loss, unscaled_reg #later scale it according to batch size and num_nodes
         elif self.model_type_ == 'KL':
-            source_nodes = data.x[data.edge_index[0]]
-            target_nodes = data.x[data.edge_index[1]]
-            messages = self.message(source_nodes, target_nodes) 
+
+            tmp = torch.cat([source_nodes, target_nodes], dim=1)
+            messages = self.edge_model(tmp) 
             mu = messages[:, 0::2]
             logvar = messages[:,1::2]
             reg_str = 1
