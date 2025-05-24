@@ -8,8 +8,9 @@ from accelerate import Accelerator
 from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR
 import wandb
 import os
-from datetime import datetime
+from datetime import datetime 
 import json
+import numpy as np
 
 # script_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.getcwd()
@@ -42,10 +43,10 @@ class NBodyGNN(MessagePassing):
             message_dim = acc_dim #this is the dimensionality of the system
         
         elif model_type == 'pruning':
-            self.initial_message_dim = 100
+            message_dim = 100
+            self.initial_message_dim = message_dim
             self.target_message_dim = acc_dim #towards the end of training, prune all except 2 messages
             self.current_message_dim = message_dim  
-            message_dim = self.initial_message_dim
 
         else: 
             message_dim = 100
@@ -137,25 +138,25 @@ class NBodyGNN(MessagePassing):
       
     def message(self, x_i, x_j):
         tmp = torch.cat([x_i, x_j], dim=1)
+        messages = self.edge_model(tmp)
         if self.model_type_ != 'KL':
             #apply pruning mask if this is a pruning model
             if self.model_type_ == 'pruning':
                 messages = messages * self.pruning_mask.to(messages.device).float()
-            return self.edge_model(tmp)
+            return messages
         
         else: #for KL model you need to sample messages
-            messages = self.edge_model(tmp)
             mu = messages[:, 0::2] #all evens are the mus
             logvar = messages[:,1::2]#all odds are the logvars
-            std = torch.exp(0.5*logvar)
-            eps = torch.randn_like(std) #reparameterisation trick to sample
-            return mu + eps * std
+            if self.training:  #only sample during training
+                noise = torch.randn(mu.shape, device=mu.device, requires_grad=False)
+                std = torch.exp(logvar/2)
+                messages = mu + noise * std
+                return messages
+            else:
+                return mu
     
     def update(self, aggr_out, x=None):
-
-        if self.model_type_ == 'pruning':
-            #apply mask to messages for pruning model
-            aggr_out = aggr_out * self.pruning_mask.to(aggr_out.device).float()
 
         tmp = torch.cat([x, aggr_out], dim=1)
         return self.node_model(tmp)
@@ -183,8 +184,8 @@ class NBodyGNN(MessagePassing):
             reg_str = 1e-2 #regularisation strength
             unscaled_reg = reg_str * torch.sum(torch.abs(messages))
             return loss, unscaled_reg #later scale it according to batch size and num_nodes
+        
         elif self.model_type_ == 'KL':
-
             tmp = torch.cat([source_nodes, target_nodes], dim=1)
             messages = self.edge_model(tmp) 
             mu = messages[:, 0::2]
@@ -215,6 +216,9 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
     if model_type == 'bottleneck':
         assert model.message_dim_ == acc_dim, 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
+
+    if model_type == 'pruning':
+        model.set_pruning_schedule(num_epoch)
     
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     batch_size = int(64*(4/input_data.shape[1])**2) 
@@ -243,6 +247,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
     #load onto GPU
     model, dataloader, val_dataloader, optimiser = accelerator.prepare(model, dataloader, val_dataloader, optimiser)
 
+
     print(f'Running on {accelerator.device}.')
 
     #learning rate scheduler
@@ -255,10 +260,31 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
     losses = []
     val_losses = []
+    active_dims_history = [] #track active message dimensions for pruning
 
     batch_per_epoch = int(len(input_data)/batch_size)
 
+    if model_type == 'pruning':
+         #use the validation data to check important messages for pruning
+        idx = np.random.choice(len(val_dataset), size=1024, replace=False)
+        sample_data = [
+            Data(
+                x=val_dataset[i].x.clone(),
+                edge_index=val_dataset[i].edge_index.clone(), 
+                y=val_dataset[i].y.clone()
+            ).to(accelerator.device) 
+            for i in idx
+        ]
+
     for epoch in range(num_epoch):
+
+        if model_type == 'pruning' and epoch in model.pruning_schedule:
+           #update mask at specific epochs using val data
+            model.update_pruning_mask(epoch, sample_data)
+            
+        if model_type == 'pruning':
+            active_dims_history.append(model.current_message_dim)
+
         total_loss = 0 #loss tracking
         i = 0
         samples = 0
@@ -271,12 +297,12 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
                 optimiser.zero_grad()
                 cur_bs = int(datapoints.batch[-1] + 1) #current batch size 
 
-                if model_type in {'standard', 'bottleneck'}:
+                if model_type in {'standard', 'bottleneck', 'pruning'}:
                     base_loss = model.loss(datapoints)
                     loss = base_loss
                 else:
                     base_loss, unscaled_reg = model.loss(datapoints)
-                    loss = (base_loss + unscaled_reg * batch_size / num_nodes)/cur_bs
+                    loss = (base_loss + unscaled_reg/ num_nodes)/cur_bs
                 
                 accelerator.backward(loss)
                 optimiser.step()
@@ -296,7 +322,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
         with torch.no_grad():
             for datapoints in val_dataloader:
                 cur_bs  = int(datapoints.batch[-1] + 1)
-                if model_type in {'standard', 'bottleneck'}:
+                if model_type in {'standard', 'bottleneck', 'pruning'}:
                     loss = model.loss(datapoints, augment=False) #validation loss don't add reg or noise
                 else: 
                     loss,_ = model.loss(datapoints, augment=False)
@@ -305,14 +331,22 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
         avg_val_loss = val_loss/val_samples
 
-        print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
-
         #log to wandb
-        wandb.log({
+        log_dict = {
             'epoch': epoch, 
             'train_loss': avg_loss,
             'val_loss': avg_val_loss,
-        })
+        }
+
+        if model_type == 'pruning':
+            print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}, active msg dims: {model.current_message_dim}')
+            log_dict['active_message_dims'] = model.current_message_dim
+
+        else:
+            print(f'training loss: {avg_loss:.4f}, val loss: {avg_val_loss:.4f}')
+
+        wandb.log(log_dict)
+
 
         #save losses
         losses.append(avg_loss)
@@ -332,6 +366,14 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
             'model_type': model.model_type_,
             'message_dim': model.message_dim_
         }
+
+        # Add pruning-specific info
+        if model_type == 'pruning':
+            checkpoint['pruning_mask'] = model.pruning_mask
+            checkpoint['current_message_dim'] = model.current_message_dim
+            checkpoint['initial_message_dim'] = model.initial_message_dim
+            checkpoint['target_message_dim'] = model.target_message_dim
+
         torch.save(checkpoint, f'{save_path}/epoch_{num_epoch}_model.pth')
         #log training run in json file
         metrics = {'datetime':datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
@@ -344,6 +386,9 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
                    'train_loss': losses,
                    'val_loss': val_losses
                    }
+        if model_type == 'pruning':
+            metrics['active_dims_history'] = active_dims_history
+            metrics['final_message_dims'] = model.current_message_dim
         with open(f'{save_path}/epoch_{num_epoch}_metrics.json', 'w') as json_file:
             json.dump(metrics, json_file, indent = 4)
 
@@ -356,13 +401,20 @@ def load_model(dataset_name, model_type, num_epoch):
         node_dim=checkpoint['node_dim'],
         acc_dim=checkpoint['acc_dim'],
         hidden_dim=checkpoint['hidden_dim'], 
-        message_dim=checkpoint['message_dim'], 
+        # message_dim=checkpoint['message_dim'], 
         model_type=checkpoint['model_type']
     )
 
     #load weights
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
+
+    # Load pruning-specific attributes
+    if model_type == 'pruning':
+        model.pruning_mask = checkpoint['pruning_mask']
+        model.current_message_dim = checkpoint['current_message_dim']
+        model.initial_message_dim = checkpoint['initial_message_dim']
+        model.target_message_dim = checkpoint['target_message_dim']
 
     print(f'Model loaded successfully.')
     
