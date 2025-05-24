@@ -162,7 +162,7 @@ class NBodyGNN(MessagePassing):
             if self.training:  #only sample during training
                 noise = torch.randn(mu.shape, device=mu.device, requires_grad=False)
                 std = torch.exp(logvar/2)
-                messages = mu + noise * std
+                messages = mu + noise * std #reparameterisation trick
                 return messages
             else:
                 return mu
