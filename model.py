@@ -11,6 +11,7 @@ import os
 from datetime import datetime 
 import json
 import numpy as np
+import math
 
 # script_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.getcwd()
@@ -95,21 +96,31 @@ class NBodyGNN(MessagePassing):
             self.pruning_schedule = None 
             self.pruning_mask = torch.ones(message_dim, dtype=torch.bool) #this is set during training
     
-    def set_pruning_schedule (self, total_epochs):
-
-        prune_start_epoch = total_epochs // 3  #start pruning after 1/3 of training
-        prune_epochs = total_epochs - prune_start_epoch
+    def set_pruning_schedule(self, total_epochs):
+        prune_start_epoch = total_epochs // 4      #start pruning after 1/4 of training
+        prune_end_epoch = 3 * total_epochs // 4    #stop pruning at 3/4 of training
+        prune_epochs = prune_end_epoch - prune_start_epoch
         
-        dims_to_prune = self.initial_message_dim - self.target_message_dim #we need to prune 98 dims
+        dims_to_prune = self.initial_message_dim - self.target_message_dim  #only leave 2 dims
         
-        #create pruning schedule - exp decay in number of active dimensions
         schedule = {}
-        for epoch in range(prune_start_epoch, total_epochs):
+        decay_rate = 3.0
+        max_decay = 1 - math.exp(-decay_rate)
+        
+        for epoch in range(prune_start_epoch, prune_end_epoch):
             progress = (epoch - prune_start_epoch) / prune_epochs
-            target_dims = self.initial_message_dim - int(dims_to_prune * (progress ** 2))
+            raw_decay = 1 - math.exp(-decay_rate * progress)
+            decay_factor = raw_decay / max_decay
+            
+            dims_pruned = math.ceil(dims_to_prune * decay_factor)
+            target_dims = self.initial_message_dim - dims_pruned
             target_dims = max(target_dims, self.target_message_dim)
             schedule[epoch] = target_dims
-            
+        
+        #for the last quarter of training, keep at target_message_dim
+        for epoch in range(prune_end_epoch, total_epochs):
+            schedule[epoch] = self.target_message_dim
+        
         self.pruning_schedule = schedule
 
     def update_pruning_mask(self, epoch, sample_data):
