@@ -2,6 +2,7 @@
 old_notebooks/
 testing.ipynb
 bad_results/
+testing_sr.ipynb
 
 #Virtual env
 .venv/
