@@ -175,6 +175,7 @@ class KLGN(NBodyGNN):
 class L1GN(NBodyGNN):
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+        self.model_type_ = 'L1'
 
     def loss(self, data, augment = True):
         acc_pred = self.get_predictions(data, augment)
@@ -192,6 +193,7 @@ class L1GN(NBodyGNN):
 class PruningGN(NBodyGNN):
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+        self.model_type_ = 'pruning'
 
         self.initial_message_dim = self.message_dim_
         self.target_message_dim = acc_dim #towards the end of training, prune all except 2 messages
