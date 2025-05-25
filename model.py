@@ -492,6 +492,36 @@ def load_model(dataset_name, model_type, num_epoch):
     
     return model
 
+def load_model_cpu_safe(dataset_name, model_type, num_epoch):
+    """Load model saved on GPU to CPU"""
+    checkpoint = torch.load(
+        f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth',
+        map_location=torch.device('cpu')  # This maps GPU tensors to CPU
+    )
+    
+    # Create a new model
+    model = create_model(
+        model_type=model_type,
+        node_dim=checkpoint['node_dim'],
+        acc_dim=checkpoint['acc_dim'],
+        hidden_dim=checkpoint['hidden_dim'], 
+    )
+
+    # Load weights
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    # Load pruning-specific attributes
+    if model_type == 'pruning':
+        model.pruning_mask = checkpoint['pruning_mask']
+        model.current_message_dim = checkpoint['current_message_dim']
+        model.initial_message_dim = checkpoint['initial_message_dim']
+        model.target_message_dim = checkpoint['target_message_dim']
+
+    print(f'Model loaded successfully on CPU.')
+    
+    return model
+
 def test(model, test_data):
 
     input_data, acc = test_data
