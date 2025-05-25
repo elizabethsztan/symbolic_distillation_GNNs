@@ -27,9 +27,9 @@ def load_data(path): #load dataset
     return data['X'], data['y']
 
 class NBodyGNN(MessagePassing):
-    def __init__(self, model_type = 'standard', node_dim = 6, acc_dim = 2, hidden_dim = 300):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         """ 
-        N-body graph NN class.
+        N-body graph NN class for the standard implementation.
 
         Args:
             node_dim (int): dimensionality of the node (in 2d case it is 6)
@@ -40,44 +40,22 @@ class NBodyGNN(MessagePassing):
     
         super().__init__(aggr='add')
 
-        if model_type == 'bottleneck':
-            message_dim = acc_dim #this is the dimensionality of the system
+        self.model_type_ = 'standard'
+        self.message_dim_ = 100
         
-        elif model_type == 'pruning':
-            message_dim = 100
-            self.initial_message_dim = message_dim
-            self.target_message_dim = acc_dim #towards the end of training, prune all except 2 messages
-            self.current_message_dim = message_dim  
-
-        else: 
-            message_dim = 100
-         
-        #edge model MLP
-        if model_type == 'KL':
-            self.edge_model = nn.Sequential(
-                nn.Linear(2*node_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim), 
-                nn.ReLU(),
-                nn.Linear(hidden_dim, int(message_dim * 2)) #double dimensionality because predicts mean and logvar of messages
-            )
-
-        else:
-            self.edge_model = nn.Sequential(
-                nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim), 
-                nn.ReLU(),
-                nn.Linear(hidden_dim, message_dim) #output message features of dimension 100 for standard and L1 model 
-            )
+        self.edge_model = nn.Sequential(
+            nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), 
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.message_dim_) #output message features of dimension 100 for standard and L1 model 
+        )
 
         #node model MLP
         self.node_model = nn.Sequential(
-            nn.Linear(node_dim + message_dim, hidden_dim), #inputs = sum of outputs of edge model and node features
+            nn.Linear(node_dim + self.message_dim_, hidden_dim), #inputs = sum of outputs of edge model and node features
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -89,13 +67,138 @@ class NBodyGNN(MessagePassing):
         self.node_dim_ = node_dim
         self.acc_dim_ = acc_dim
         self.hidden_dim_ = hidden_dim
-        self.model_type_ = model_type
-        self.message_dim_ = message_dim
 
-        if model_type == 'pruning':
-            self.pruning_schedule = None 
-            self.pruning_mask = torch.ones(message_dim, dtype=torch.bool) #this is set during training
+    def forward(self, x, edge_index):
+        return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
+      
+    def message(self, x_i, x_j):
+        tmp = torch.cat([x_i, x_j], dim=1)
+        messages = self.edge_model(tmp)
+        return messages
+
+    def update(self, aggr_out, x=None):
+        tmp = torch.cat([x, aggr_out], dim=1)
+        return self.node_model(tmp)
     
+    def get_predictions(self, data, augment, augmentation = 3):
+        x, edge_index = data.x, data.edge_index
+        if augment:
+            augmentation = torch.randn(1, self.acc_dim_)*augmentation
+            augmentation = augmentation.repeat(len(x), 1).to(x.device)
+            x = x.index_add(1, torch.arange(self.acc_dim_).to(x.device), augmentation) #add noise to the position coordinates
+
+        return self.propagate(edge_index,size=(x.size(0), x.size(0)), x=x)
+
+    def loss(self, data, augment = True):
+        acc_pred = self.get_predictions(data, augment)
+        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
+
+        return loss
+    
+class BottleneckGN(NBodyGNN):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
+        super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+        self.model_type_ = 'bottleneck'
+        self.message_dim_ = acc_dim
+
+        self.edge_model = nn.Sequential(
+            nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), 
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.message_dim_) #output message features of dimension 2 for bottleneck 2d
+        )
+
+        #node model MLP
+        self.node_model = nn.Sequential(
+            nn.Linear(node_dim + self.message_dim_, hidden_dim), #inputs = sum of outputs of edge model and node features
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, acc_dim) #output = predicted acc
+        )
+
+        self.node_dim_ = node_dim
+        self.acc_dim_ = acc_dim
+        self.hidden_dim_ = hidden_dim
+
+class KLGN(NBodyGNN):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
+        super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+
+        self.model_type_ = 'KL'
+        self.edge_model = nn.Sequential(
+            nn.Linear(2*node_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim), 
+            nn.ReLU(),
+            nn.Linear(hidden_dim, int(self.message_dim_ * 2)))
+        
+    def message(self, x_i, x_j):
+        tmp = torch.cat([x_i, x_j], dim=1)
+        messages = self.edge_model(tmp)
+        #for KL model you need to sample messages
+        mu = messages[:, 0::2] #all evens are the mus
+        logvar = messages[:,1::2]#all odds are the logvars
+
+        if self.training:  #only sample during training
+            noise = torch.randn(mu.shape, device=mu.device, requires_grad=False)
+            std = torch.exp(logvar/2)
+            messages = mu + noise * std #reparameterisation trick
+            return messages
+        else:
+            return mu
+        
+    def loss(self, data, augment = True):
+        acc_pred = self.get_predictions(data, augment)
+        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
+
+        source_nodes = data.x[data.edge_index[0]]
+        target_nodes = data.x[data.edge_index[1]]
+
+        tmp = torch.cat([source_nodes, target_nodes], dim=1)
+        messages = self.edge_model(tmp) 
+        mu = messages[:, 0::2]
+        logvar = messages[:,1::2]
+
+        reg_str = 1
+        unscaled_reg = reg_str * torch.sum(torch.exp(logvar) + mu**2 - logvar)/2 #reg term is kL div
+
+        return loss, unscaled_reg
+    
+class L1GN(NBodyGNN):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
+        super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+
+    def loss(self, data, augment = True):
+        acc_pred = self.get_predictions(data, augment)
+        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
+
+        source_nodes = data.x[data.edge_index[0]]
+        target_nodes = data.x[data.edge_index[1]]
+
+        messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
+        reg_str = 1e-2 #regularisation strength
+        unscaled_reg = reg_str * torch.sum(torch.abs(messages))
+
+        return loss, unscaled_reg #later scale it according to batch size and num_nodes
+    
+class PruningGN(NBodyGNN):
+    def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
+        super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+
+        self.initial_message_dim = self.message_dim_
+        self.target_message_dim = acc_dim #towards the end of training, prune all except 2 messages
+        self.current_message_dim = self.message_dim_
+        self.pruning_schedule = None 
+        self.pruning_mask = torch.ones(self.message_dim_, dtype=torch.bool) #this is set during training
+
     def set_pruning_schedule(self, total_epochs):
         prune_start_epoch = total_epochs // 4      #start pruning after 1/4 of training
         prune_end_epoch = 3 * total_epochs // 4    #stop pruning at 3/4 of training
@@ -144,68 +247,12 @@ class NBodyGNN(MessagePassing):
             self.pruning_mask = new_mask
             self.current_message_dim = target_dims
 
-    def forward(self, x, edge_index):
-        return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
-      
     def message(self, x_i, x_j):
         tmp = torch.cat([x_i, x_j], dim=1)
         messages = self.edge_model(tmp)
-        if self.model_type_ != 'KL':
-            #apply pruning mask if this is a pruning model
-            if self.model_type_ == 'pruning':
-                messages = messages * self.pruning_mask.to(messages.device).float()
-            return messages
+        messages = messages * self.pruning_mask.to(messages.device).float() #apply pruning mask
+        return messages
         
-        else: #for KL model you need to sample messages
-            mu = messages[:, 0::2] #all evens are the mus
-            logvar = messages[:,1::2]#all odds are the logvars
-            if self.training:  #only sample during training
-                noise = torch.randn(mu.shape, device=mu.device, requires_grad=False)
-                std = torch.exp(logvar/2)
-                messages = mu + noise * std #reparameterisation trick
-                return messages
-            else:
-                return mu
-    
-    def update(self, aggr_out, x=None):
-
-        tmp = torch.cat([x, aggr_out], dim=1)
-        return self.node_model(tmp)
-    
-    def get_predictions(self, data, augment, augmentation = 3):
-        x, edge_index = data.x, data.edge_index
-        if augment:
-            augmentation = torch.randn(1, self.acc_dim_)*augmentation
-            augmentation = augmentation.repeat(len(x), 1).to(x.device)
-            x = x.index_add(1, torch.arange(self.acc_dim_).to(x.device), augmentation) #add noise to the position coordinates
-
-        return self.propagate(edge_index,size=(x.size(0), x.size(0)), x=x)
-
-    
-    def loss(self, data, augment = True):
-        acc_pred = self.get_predictions(data, augment)
-        loss = torch.sum(torch.abs(data.y - acc_pred)) #MAE loss 
-
-        source_nodes = data.x[data.edge_index[0]]
-        target_nodes = data.x[data.edge_index[1]]
-
-        if self.model_type_ == 'L1':
-
-            messages = self.message(source_nodes, target_nodes) #collect the messages between all nodes
-            reg_str = 1e-2 #regularisation strength
-            unscaled_reg = reg_str * torch.sum(torch.abs(messages))
-            return loss, unscaled_reg #later scale it according to batch size and num_nodes
-        
-        elif self.model_type_ == 'KL':
-            tmp = torch.cat([source_nodes, target_nodes], dim=1)
-            messages = self.edge_model(tmp) 
-            mu = messages[:, 0::2]
-            logvar = messages[:,1::2]
-            reg_str = 1
-            unscaled_reg = reg_str * torch.sum(torch.exp(logvar) + mu**2 - logvar)/2
-            return loss, unscaled_reg
-        else:
-            return loss
 
 
 def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = True, wandb_log = True):
@@ -405,15 +452,29 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
     return model
 
+def create_model(model_type, node_dim=6, acc_dim=2, hidden_dim=300):
+    if model_type == 'standard':
+        return NBodyGNN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+    elif model_type == 'bottleneck':
+        return BottleneckGN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+    elif model_type == 'KL':
+        return KLGN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+    elif model_type == 'L1':
+        return L1GN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+    elif model_type == 'pruning':
+        return PruningGN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}. Must be one of: 'standard', 'bottleneck', 'KL', 'L1', 'pruning'")
+    
+
 def load_model(dataset_name, model_type, num_epoch):
     checkpoint = torch.load(f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth')
     #create a new model
-    model = NBodyGNN(
+    model = create_model(
+        model_type=model_type,
         node_dim=checkpoint['node_dim'],
         acc_dim=checkpoint['acc_dim'],
         hidden_dim=checkpoint['hidden_dim'], 
-        # message_dim=checkpoint['message_dim'], 
-        model_type=checkpoint['model_type']
     )
 
     #load weights
