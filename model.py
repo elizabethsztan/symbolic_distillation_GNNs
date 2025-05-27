@@ -469,32 +469,32 @@ def create_model(model_type, node_dim=6, acc_dim=2, hidden_dim=300):
         raise ValueError(f"Unknown model_type: {model_type}. Must be one of: 'standard', 'bottleneck', 'KL', 'L1', 'pruning'")
     
 
-def load_model(dataset_name, model_type, num_epoch):
-    checkpoint = torch.load(f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth')
-    #create a new model
-    model = create_model(
-        model_type=model_type,
-        node_dim=checkpoint['node_dim'],
-        acc_dim=checkpoint['acc_dim'],
-        hidden_dim=checkpoint['hidden_dim'], 
-    )
+# def load_model(dataset_name, model_type, num_epoch):
+#     checkpoint = torch.load(f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth')
+#     #create a new model
+#     model = create_model(
+#         model_type=model_type,
+#         node_dim=checkpoint['node_dim'],
+#         acc_dim=checkpoint['acc_dim'],
+#         hidden_dim=checkpoint['hidden_dim'], 
+#     )
 
-    #load weights
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+#     #load weights
+#     model.load_state_dict(checkpoint['model_state_dict'])
+#     model.eval()
 
-    # Load pruning-specific attributes
-    if model_type == 'pruning':
-        model.pruning_mask = checkpoint['pruning_mask']
-        model.current_message_dim = checkpoint['current_message_dim']
-        model.initial_message_dim = checkpoint['initial_message_dim']
-        model.target_message_dim = checkpoint['target_message_dim']
+#     # Load pruning-specific attributes
+#     if model_type == 'pruning':
+#         model.pruning_mask = checkpoint['pruning_mask']
+#         model.current_message_dim = checkpoint['current_message_dim']
+#         model.initial_message_dim = checkpoint['initial_message_dim']
+#         model.target_message_dim = checkpoint['target_message_dim']
 
-    print(f'Model loaded successfully.')
+#     print(f'Model loaded successfully.')
     
-    return model
+#     return model
 
-def load_model_cpu_safe(dataset_name, model_type, num_epoch):
+def load_model(dataset_name, model_type, num_epoch):
     """Load model saved on GPU to CPU"""
     checkpoint = torch.load(
         f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth',
@@ -520,7 +520,7 @@ def load_model_cpu_safe(dataset_name, model_type, num_epoch):
         model.initial_message_dim = checkpoint['initial_message_dim']
         model.target_message_dim = checkpoint['target_message_dim']
 
-    print(f'Model loaded successfully on CPU.')
+    print(f'Model loaded successfully.')
     
     return model
 
