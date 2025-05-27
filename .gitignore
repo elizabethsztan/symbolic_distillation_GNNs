@@ -19,3 +19,4 @@ train_val_test_data/
 model_weights/
 
 wandb/
+.DS_Store
