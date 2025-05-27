@@ -64,9 +64,9 @@ def generate_data(sim = 'r1', save = True):
 
     return X, y
 
-def load_data(path):
-    data = torch.load(f"{path}.pt")
-    return data['X'], data['y']
+# def load_data(path):
+#     data = torch.load(f"{path}.pt")
+#     return data['X'], data['y']
 
 def main():
     parser = argparse.ArgumentParser()
