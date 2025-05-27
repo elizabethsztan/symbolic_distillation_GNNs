@@ -22,9 +22,9 @@ def get_edge_index(num_nodes): #edge index for fully connected graph
     edge_index = edge_index[edge_index[:, 0] != edge_index[:, 1]]
     return edge_index.t() #output dimension [2, num_edges]
 
-def load_data(path): #load dataset 
-    data = torch.load(f"{path}.pt")
-    return data['X'], data['y']
+# def load_data(path): #load dataset 
+#     data = torch.load(f"{path}.pt")
+#     return data['X'], data['y']
 
 class NBodyGNN(MessagePassing):
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
