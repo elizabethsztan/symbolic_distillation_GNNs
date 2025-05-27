@@ -110,14 +110,18 @@ def fit_messages(df, msg_array, sim='spring', dim=2):
     
     #normalise the message elements
     msgs_to_compare = (msgs_to_compare - np.average(msgs_to_compare, axis=0)) / np.std(msgs_to_compare, axis=0)
-    
+
+    dir_cols = ['dx', 'dy']
+    bd_array = np.array(df['bd'])
+    dir_array = np.array(df[dir_cols])
+    #true force for spring (returns force for each edge x and y direction)
     #calculate forces based on simulation
     if sim == 'spring':
-        dir_cols = ['dx', 'dy']
-        bd_array = np.array(df['bd'])
-        dir_array = np.array(df[dir_cols])
-        #true force for spring (returns force for each edge x and y direction)
         expected_forces = -(bd_array - 1)[:, np.newaxis] * dir_array / bd_array[:, np.newaxis]
+    elif sim == 'r2':
+        m1 = df.m1.values
+        m2 = df.m2.values
+        expected_forces =  -m1[:, np.newaxis]*m2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**3)
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
 
@@ -170,7 +174,7 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         ax[i].set_xlim(xlim)
         ax[i].set_ylim(ylim)
         
-        #y = x line
+        #y = x line 
         line_x = np.linspace(xlim[0], xlim[1], 100)
         line_y = line_x
         ax[i].plot(line_x, line_y, color='black')
