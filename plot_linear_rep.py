@@ -122,6 +122,11 @@ def fit_messages(df, msg_array, sim='spring', dim=2):
         m1 = df.m1.values
         m2 = df.m2.values
         expected_forces =  -m1[:, np.newaxis]*m2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**3)
+    elif sim == 'r1':
+        m1 = df.m1.values
+        m2 = df.m2.values
+        expected_forces = -m1[:, np.newaxis]*m2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**2)
+        print('R1 FORCE')
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
 
