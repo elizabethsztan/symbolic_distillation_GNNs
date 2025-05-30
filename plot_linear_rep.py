@@ -12,6 +12,7 @@ from model import load_model, get_edge_index
 from utils import load_data
 import argparse
 from scipy.optimize import minimize
+import json
 
 def get_message_features(model, input_data):
     model.eval()
@@ -127,7 +128,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         m1 = df.m1.values
         m2 = df.m2.values
         expected_forces = -m1[:, np.newaxis]*m2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**2)
-        print('R1 FORCE')
+
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
 
@@ -317,15 +318,40 @@ def main():
     parser.add_argument("--cutoff", type=int, default=0)
 
     args = parser.parse_args()
-
-    model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
+   
     _, _, test_data = load_data(args.dataset_name)
     X_test, y_test = test_data
     cutoff = args.cutoff #option to use a smaller subset of the test set 
     if cutoff != 0:
         X_test = X_test[:cutoff]
         y_test = y_test[:cutoff]
-    plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)
+
+    if args.model_type != 'all':
+        model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
+        plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)
+
+    else:
+        model_types = ['standard', 'bottleneck', 'L1', 'KL']
+        all_results = {}
+        for model_type in model_types:
+            model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
+            print(f"\nProcessing model type: {model_type}")
+            r2_scores, fig = plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=model_type, epochs=args.num_epoch)
+            
+            # Store results
+            all_results[model_type] = {
+                'message_1_r2': float(r2_scores[0]),
+                'message_2_r2': float(r2_scores[1])
+            }
+            
+            plt.close(fig)  # Close figure to save memory
+        save_path = f'linrepr_plots/{args.dataset_name}'
+        os.makedirs(save_path, exist_ok=True)
+    
+        results_file = f'{save_path}/r2_scores_epoch_{args.num_epoch}.json'
+        with open(results_file, 'w') as f:
+            json.dump(all_results, f, indent=2)
+        
 
 
 if __name__ == "__main__":
