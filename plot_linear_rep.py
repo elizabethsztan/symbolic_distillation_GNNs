@@ -11,6 +11,7 @@ import os
 from model import load_model, get_edge_index
 from utils import load_data
 import argparse
+from scipy.optimize import minimize
 
 def get_message_features(model, input_data):
     model.eval()
@@ -92,7 +93,7 @@ def get_message_features(model, input_data):
     else:
         return df, msg_array
 
-def fit_messages(df, msg_array, sim='spring', dim=2):
+def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
 
     if 'logvar0' in df.columns: #this means that we are doing the KL variation 
         logvar_array = msg_array[1]
@@ -131,29 +132,119 @@ def fit_messages(df, msg_array, sim='spring', dim=2):
         raise ValueError(f"Unknown simulation type: {sim}")
 
     #fit linear model with bias: msg1 = a0 + a1 * Fx + a2 * Fy
-    reg = LinearRegression()
-    reg.fit(expected_forces, msgs_to_compare)
+    def linear_reg (expected_forces, msgs_to_compare):
+        reg = LinearRegression()
+        reg.fit(expected_forces, msgs_to_compare)
+        lin_combo = reg.predict(expected_forces) 
 
-    lin_combo = reg.predict(expected_forces) 
-    lin_combo1 = lin_combo[:, 0]
-    lin_combo2 = lin_combo[:, 1]
+        #return back the parameters too
+        params = reg.coef_
+        biases = reg.intercept_  
 
-    #return back the parameters too
-    params = reg.coef_
-    biases = reg.intercept_  
-    a0_1, a1_1, a2_1 = biases[0], params[0,0], params[0,1] #msg1 params
-    a0_2, a1_2, a2_2 = biases[1], params[1,0], params[1,1] #msg2 params
 
-    #get a score depending on similarity to the actual msg
-    def percentile_mse(a, b):
-        diffs = np.square(a - b)
-        return np.mean([np.mean(diffs[:, 0]), np.mean(diffs[:, 1])]) #ave for both msg
-    score = percentile_mse(msgs_to_compare, lin_combo)
-    print(f'linear fit mse score: {score}')
+        return lin_combo, params, biases
     
-    #calc r2 scores for both messages
-    msg1_r2 = r2_score(msgs_to_compare[:, 0], lin_combo1)
-    msg2_r2 = r2_score(msgs_to_compare[:, 1], lin_combo2)
+    def robust_linear_reg(expected_forces, msgs_to_compare):
+    
+        def percentile_sum(x):
+            x = x.ravel()
+            bot = x.min()
+            top = np.percentile(x, 90)
+            msk = (x >= bot) & (x <= top)
+            frac_good = (msk).sum() / len(x)
+            return x[msk].sum() / frac_good
+        
+        def linear_transformation_2d(alpha):
+            """
+            Exactly matching your original implementation structure.
+            alpha = [a00, a01, bias0, a10, a11, bias1]
+            """
+            # First target: msgs_to_compare[:, 0]
+            lincomb1 = (alpha[0] * expected_forces[:, 0] + alpha[1] * expected_forces[:, 1]) + alpha[2]
+            # Second target: msgs_to_compare[:, 1]  
+            lincomb2 = (alpha[3] * expected_forces[:, 0] + alpha[4] * expected_forces[:, 1]) + alpha[5]
+            
+            score = (
+                percentile_sum(np.square(msgs_to_compare[:, 0] - lincomb1)) +
+                percentile_sum(np.square(msgs_to_compare[:, 1] - lincomb2))
+            ) / 2.0
+            
+            return score
+        
+        def get_predictions_2d(alpha):
+            """Get predictions from optimized parameters"""
+            lincomb1 = (alpha[0] * expected_forces[:, 0] + alpha[1] * expected_forces[:, 1]) + alpha[2]
+            lincomb2 = (alpha[3] * expected_forces[:, 0] + alpha[4] * expected_forces[:, 1]) + alpha[5]
+            return np.column_stack([lincomb1, lincomb2])
+        
+        # Initialize parameters: [a00, a01, bias0, a10, a11, bias1]
+        initial_params = np.ones(6)
+        
+        # Optimize using Powell method
+        min_result = minimize(linear_transformation_2d, initial_params, method='Powell')
+        print('robust score: ', min_result.fun/len(msgs_to_compare))
+        
+        # Extract optimized parameters
+        alpha = min_result.x
+        
+        # Reshape to match sklearn format
+        params = np.array([[alpha[0], alpha[1]], 
+                        [alpha[3], alpha[4]]]) 
+        biases = np.array([alpha[2], alpha[5]])  
+        
+        # Get final predictions
+        lin_combo = get_predictions_2d(alpha)
+        
+        return lin_combo, params, biases
+
+    def robust_r2_score(y_true, y_pred):
+        """
+        Calculate R² using only the best-fitting 90% of points (from min to 90th percentile of residuals)
+        This matches the robust regression approach.
+        """
+        residuals = np.square(y_true - y_pred)
+        
+        # Use same percentile logic as robust regression
+        bot = residuals.min()
+        top = np.percentile(residuals, 90)
+        mask = (residuals >= bot) & (residuals <= top)
+        
+        # Calculate R² only on the masked (good) points
+        y_true_masked = y_true[mask]
+        y_pred_masked = y_pred[mask]
+        
+        # Standard R² formula on masked data
+        ss_res = np.sum((y_true_masked - y_pred_masked) ** 2)
+        ss_tot = np.sum((y_true_masked - np.mean(y_true_masked)) ** 2)
+        
+        if ss_tot == 0:
+            return 1.0 if ss_res == 0 else 0.0
+        
+        return 1 - (ss_res / ss_tot)
+
+    if robust:
+    
+        lin_combo, params, biases = robust_linear_reg(expected_forces, msgs_to_compare)
+        lin_combo1 = lin_combo[:, 0]
+        lin_combo2 = lin_combo[:, 1]
+
+        a0_1, a1_1, a2_1 = biases[0], params[0,0], params[0,1] #msg1 params
+        a0_2, a1_2, a2_2 = biases[1], params[1,0], params[1,1] #msg2 params
+
+        msg1_r2 = robust_r2_score(msgs_to_compare[:, 0], lin_combo1)
+        msg2_r2 = robust_r2_score(msgs_to_compare[:, 1], lin_combo2)
+
+    else:
+        lin_combo, params, biases = linear_reg(expected_forces, msgs_to_compare)
+        lin_combo1 = lin_combo[:, 0]
+        lin_combo2 = lin_combo[:, 1]
+
+        a0_1, a1_1, a2_1 = biases[0], params[0,0], params[0,1] #msg1 params
+        a0_2, a1_2, a2_2 = biases[1], params[1,0], params[1,1] #msg2 params
+        
+        #calc r2 scores for both messages
+        msg1_r2 = r2_score(msgs_to_compare[:, 0], lin_combo1)
+        msg2_r2 = r2_score(msgs_to_compare[:, 1], lin_combo2)
     
     return (msg1_r2, msg2_r2), (lin_combo1, lin_combo2), [a0_1, a1_1, a2_1], [a0_2, a1_2, a2_2], msgs_to_compare
 
@@ -168,19 +259,23 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         #plot points
         ax[i].scatter(x, y, alpha=0.1, s=0.1, color='blue')
         
-        #set limits
-        xlim = np.array([np.percentile(x, q) for q in [10, 90]])
-        ylim = np.array([np.percentile(y, q) for q in [10, 90]])
+        # #set limits
+        # xlim = np.array([np.percentile(x, q) for q in [10, 90]])
+        # ylim = np.array([np.percentile(y, q) for q in [10, 90]])
         
-        #add padding to the limits (same as in colab)
-        xlim[0], xlim[1] = xlim[0] - (xlim[1] - xlim[0])*0.05, xlim[1] + (xlim[1] - xlim[0])*0.05
-        ylim[0], ylim[1] = ylim[0] - (ylim[1] - ylim[0])*0.05, ylim[1] + (ylim[1] - ylim[0])*0.05
+        # #add padding to the limits (same as in colab)
+        # xlim[0], xlim[1] = xlim[0] - (xlim[1] - xlim[0])*0.05, xlim[1] + (xlim[1] - xlim[0])*0.05
+        # ylim[0], ylim[1] = ylim[0] - (ylim[1] - ylim[0])*0.05, ylim[1] + (ylim[1] - ylim[0])*0.05
         
-        ax[i].set_xlim(xlim)
-        ax[i].set_ylim(ylim)
+        # ax[i].set_xlim(xlim)
+        # ax[i].set_ylim(ylim)
+
+        ax[i].set_xlim(-1,1)
+        ax[i].set_ylim(-1,1)
         
         #y = x line 
-        line_x = np.linspace(xlim[0], xlim[1], 100)
+        # line_x = np.linspace(xlim[0], xlim[1], 100)
+        line_x = np.linspace(-1, 1, 100)
         line_y = line_x
         ax[i].plot(line_x, line_y, color='black')
 
