@@ -16,33 +16,80 @@ import math
 # script_dir = os.path.dirname(os.path.abspath(__file__))
 script_dir = os.getcwd()
 
-def get_edge_index(num_nodes): #edge index for fully connected graph
+def get_edge_index(num_nodes):
+    """
+    Generate edge indices for a fully connected graph.
+    
+    Creates a complete graph where every node is connected to every other node
+    (excluding self-connections). All particles in our system interact.
+    
+    Args:
+        num_nodes (int): Number of nodes/particles in the graph.
+        
+    Returns:
+        torch.Tensor: Edge index tensor of shape [2, num_edges] where num_edges = 
+                     num_nodes * (num_nodes - 1). The first row contains source node 
+                     indices and the second row contains target node indices.
+                     
+    Example:
+        >>> edge_index = get_edge_index(4)
+        >>> print(edge_index)
+        tensor([[0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
+                [1, 2, 3, 0, 2, 3, 0, 1, 3, 0, 1, 2]])
+        # This represents edges: 0->1, 0->2, 0->3, 1->0, 1->2, 1->3, 2->0, 2->1, 2->3, 3->0, 3->1, 3->2
+    """
     idx = torch.arange(num_nodes)
     edge_index = torch.cartesian_prod(idx, idx)
     edge_index = edge_index[edge_index[:, 0] != edge_index[:, 1]]
     return edge_index.t() #output dimension [2, num_edges]
 
-# def load_data(path): #load dataset 
-#     data = torch.load(f"{path}.pt")
-#     return data['X'], data['y']
-
 class NBodyGNN(MessagePassing):
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
-        """ 
-        N-body graph NN class for the standard implementation.
-
-        Args:
-            node_dim (int): dimensionality of the node (in 2d case it is 6)
-            acc_dim (int): dimensionality of the output of the network, which are accelerations so in 2d = 2
-            hidden_dim (int): hidden layer dimensions - same for both edge and node MLPs
-
         """
+            Graph Neural Network for N-body physics simulations using message passing.
+            
+            This class implements a standard message-passing neural network designed for 
+            predicting accelerations in N-body systems (e.g., gravitational or electrostatic 
+            interactions between particles). The network uses an edge model to compute 
+            messages between particles and a node model to aggregate these messages and 
+            predict accelerations.
+            
+            The architecture consists of:
+            - Edge model: MLP that processes pairs of node features to generate messages
+            - Node model: MLP that combines node features with aggregated messages to predict accelerations
+            
+            Args:
+                node_dim (int, optional): Dimensionality of node features. For 2D systems, 
+                    this is typically 6 (x, y, velocity_x, velocity_y, charge, mass). 
+                    Defaults to 6.
+                acc_dim (int, optional): Dimensionality of acceleration output. For 2D 
+                    systems, this is 2 (acceleration_x, acceleration_y). Defaults to 2.
+                hidden_dim (int, optional): Hidden layer dimensions for both edge and node 
+                    MLPs. Defaults to 300.
+            
+            Attributes:
+                model_type_ (str): Model type identifier, set to 'standard'.
+                message_dim_ (int): Dimensionality of messages passed between nodes (100).
+                edge_model (nn.Sequential): MLP for processing edge features.
+                node_model (nn.Sequential): MLP for processing node features and messages.
+                node_dim_ (int): Stored node dimension.
+                acc_dim_ (int): Stored acceleration dimension.
+                hidden_dim_ (int): Stored hidden dimension.
+            
+            Example:
+                >>> model = NBodyGNN(node_dim=6, acc_dim=2, hidden_dim=256)
+            
+            Note:
+                This class inherits from PyTorch Geometric's MessagePassing and uses 
+                'add' aggregation to sum messages from neighboring nodes.
+            """
     
         super().__init__(aggr='add')
 
         self.model_type_ = 'standard'
         self.message_dim_ = 100
         
+        #edge model MLP
         self.edge_model = nn.Sequential(
             nn.Linear(2*node_dim, hidden_dim), #inputs = node information for two nodes
             nn.ReLU(),
@@ -69,14 +116,44 @@ class NBodyGNN(MessagePassing):
         self.hidden_dim_ = hidden_dim
 
     def forward(self, x, edge_index):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x (torch.Tensor): Node features of shape [num_nodes, node_dim].
+            edge_index (torch.Tensor): Edge indices of shape [2, num_edges].
+            
+        Returns:
+            torch.Tensor: Predicted accelerations of shape [num_nodes, acc_dim].
+        """
         return self.propagate(edge_index, size=(x.size(0), x.size(0)), x=x)
       
     def message(self, x_i, x_j):
+        """
+        Compute messages between connected nodes.
+        
+        Args:
+            x_i (torch.Tensor): Source node features of shape [num_edges, node_dim].
+            x_j (torch.Tensor): Target node features of shape [num_edges, node_dim].
+            
+        Returns:
+            torch.Tensor: Messages of shape [num_edges, message_dim_].
+        """
         tmp = torch.cat([x_i, x_j], dim=1)
         messages = self.edge_model(tmp)
         return messages
 
     def update(self, aggr_out, x=None):
+        """
+        Update node representations using aggregated messages.
+        
+        Args:
+            aggr_out (torch.Tensor): Aggregated messages of shape [num_nodes, message_dim_].
+            x (torch.Tensor): Original node features of shape [num_nodes, node_dim].
+            
+        Returns:
+            torch.Tensor: Updated node features (predicted accelerations) of shape [num_nodes, acc_dim].
+        """
         tmp = torch.cat([x, aggr_out], dim=1)
         return self.node_model(tmp)
     
@@ -359,7 +436,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
                 if model_type in {'standard', 'bottleneck', 'pruning'}:
                     base_loss = model.loss(datapoints)
-                    loss = base_loss
+                    loss = base_loss/cur_bs
                 else:
                     base_loss, unscaled_reg = model.loss(datapoints)
                     loss = (base_loss + unscaled_reg/ num_nodes)/cur_bs
