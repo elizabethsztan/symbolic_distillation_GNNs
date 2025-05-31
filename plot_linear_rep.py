@@ -145,15 +145,15 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
 
         return lin_combo, params, biases
     
-    def robust_linear_reg(expected_forces, msgs_to_compare):
+    def percentile_sum(x):
+        x = x.ravel()
+        bot = x.min()
+        top = np.percentile(x, 90)
+        msk = (x >= bot) & (x <= top)
+        frac_good = (msk).sum() / len(x)
+        return x[msk].sum() / frac_good
     
-        def percentile_sum(x):
-            x = x.ravel()
-            bot = x.min()
-            top = np.percentile(x, 90)
-            msk = (x >= bot) & (x <= top)
-            frac_good = (msk).sum() / len(x)
-            return x[msk].sum() / frac_good
+    def robust_linear_reg(expected_forces, msgs_to_compare):
         
         def linear_transformation_2d(alpha):
             """
