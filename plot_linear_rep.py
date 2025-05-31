@@ -15,22 +15,29 @@ from scipy.optimize import minimize
 import json
 
 def get_message_features(model, input_data):
+    """
+    Extract message features from a trained GNN model for analysis.
+    
+    Args:
+        model: Trained PyTorch geometric model with edge_model attribute
+        input_data (tuple): Tuple containing (X_test, y_test) where:
+            - X_test: Input features of shape [n_samples, n_nodes, n_features]
+            - y_test: Target values (accelerations) [n_samples, n_nodes, n_dim]
+    
+    Returns:
+        tuple: (df, msg_array) where:
+            - df: pandas DataFrame containing node features, messages, and computed distances
+            - msg_array: numpy array of message features, or list [messages, logvar] for KL models
+    """
     model.eval()
 
     X_test, y_test = input_data
     edge_index = get_edge_index(X_test.shape[1])
-
-    # test_idxes = np.random.randint(0, len(X_test), 1000)
-    # dataset = DataLoader(
-    #     [Data(x=X_test[i], edge_index=edge_index, y=y_test[i]) for i in test_idxes],
-    #     batch_size=len(X_test),
-    #     shuffle=False)
     
     dataset = DataLoader(
         [Data(x=X_test[i], edge_index=edge_index, y=y_test[i]) for i in range(len(X_test))],
         batch_size=len(X_test),
         shuffle=False)
-
     
     all_message_info = []
     
@@ -95,10 +102,29 @@ def get_message_features(model, input_data):
         return df, msg_array
 
 def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
+    """
+    Fit linear combinations of expected physical forces to explain message features.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing node features and computed distances
+        msg_array (np.array or list): Message features array, or list [messages, logvar] for KL models
+        sim (str): Simulation type - 'spring', 'r1', or 'r2' for different force laws
+        dim (int): Number of most important message dimensions to analyse (default: 2)
+        robust (bool): Whether to use robust regression (default: True). For robust regression, 
+        we mask the 10% worst outliers when doing the linear regression and calculating R² scores
+    
+    Returns:
+        tuple: (r2_scores, lin_combos, params1, params2, msgs_to_compare) where:
+            - r2_scores: Tuple of R² scores for each message dimension
+            - lin_combos: Tuple of linear combination predictions for each dimension
+            - params1, params2: Lists of fitted parameters [bias, coeff_x, coeff_y] for each dimension
+            - msgs_to_compare: Normalised message features used in fitting
+    """
 
     if 'logvar0' in df.columns: #this means that we are doing the KL variation 
         logvar_array = msg_array[1]
         msg_array = msg_array[0]
+        #in KL variation, important features have highest KL div
         KL_div =  (np.exp(logvar_array) + msg_array**2 - logvar_array)/2
         KL_mean = KL_div.mean(axis=0)
         most_important = np.argsort(KL_mean)[-dim:]
@@ -133,7 +159,18 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         raise ValueError(f"Unknown simulation type: {sim}")
 
     #fit linear model with bias: msg1 = a0 + a1 * Fx + a2 * Fy
+    #not robust to outliers. just uses SKLearn LinearRegression
     def linear_reg (expected_forces, msgs_to_compare):
+        """
+        Perform standard linear regression to fit forces to messages.
+        
+        Args:
+            expected_forces (np.array): Expected force values [n_samples, 2]
+            msgs_to_compare (np.array): Message features to fit [n_samples, 2]
+        
+        Returns:
+            tuple: (lin_combo, params, biases) - predictions, coefficients, and intercepts
+        """
         reg = LinearRegression()
         reg.fit(expected_forces, msgs_to_compare)
         lin_combo = reg.predict(expected_forces) 
@@ -142,9 +179,9 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         params = reg.coef_
         biases = reg.intercept_  
 
-
         return lin_combo, params, biases
     
+    #masks residual outliers
     def percentile_sum(x):
         x = x.ravel()
         bot = x.min()
@@ -153,16 +190,32 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         frac_good = (msk).sum() / len(x)
         return x[msk].sum() / frac_good
     
+    #linear reg
     def robust_linear_reg(expected_forces, msgs_to_compare):
+        """
+        Perform robust linear regression using percentile-based loss function.
+        
+        Args:
+            expected_forces (np.array): Expected force values [n_samples, 2]
+            msgs_to_compare (np.array): Message features to fit [n_samples, 2]
+        
+        Returns:
+            tuple: (lin_combo, params, biases) - predictions, coefficients, and intercepts
+        """
         
         def linear_transformation_2d(alpha):
             """
-            Exactly matching your original implementation structure.
-            alpha = [a00, a01, bias0, a10, a11, bias1]
+            Objective function for 2D linear transformation optimisation.
+            
+            Args:
+                alpha (np.array): Parameters [a00, a01, bias0, a10, a11, bias1]
+            
+            Returns:
+                float: Robust loss score
             """
-            # First target: msgs_to_compare[:, 0]
+            #first target: msgs_to_compare[:, 0]
             lincomb1 = (alpha[0] * expected_forces[:, 0] + alpha[1] * expected_forces[:, 1]) + alpha[2]
-            # Second target: msgs_to_compare[:, 1]  
+            #second target: msgs_to_compare[:, 1]  
             lincomb2 = (alpha[3] * expected_forces[:, 0] + alpha[4] * expected_forces[:, 1]) + alpha[5]
             
             score = (
@@ -173,58 +226,62 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
             return score
         
         def get_predictions_2d(alpha):
-            """Get predictions from optimized parameters"""
+            """
+            Get predictions from optimised parameters.
+            
+            Args:
+                alpha (np.array): Optimised parameters [a00, a01, bias0, a10, a11, bias1]
+            
+            Returns:
+                np.array: Predicted values [n_samples, 2]
+            """
             lincomb1 = (alpha[0] * expected_forces[:, 0] + alpha[1] * expected_forces[:, 1]) + alpha[2]
             lincomb2 = (alpha[3] * expected_forces[:, 0] + alpha[4] * expected_forces[:, 1]) + alpha[5]
             return np.column_stack([lincomb1, lincomb2])
         
-        # Initialize parameters: [a00, a01, bias0, a10, a11, bias1]
+        #initialise parameters just at zero
         initial_params = np.ones(6)
         
-        # Optimize using Powell method
+        #optimise
         min_result = minimize(linear_transformation_2d, initial_params, method='Powell')
-        print('robust score: ', min_result.fun/len(msgs_to_compare))
+        print('robust score: ', min_result.fun/len(msgs_to_compare)) #lower is better
         
-        # Extract optimized parameters
+        #get params
         alpha = min_result.x
-        
-        # Reshape to match sklearn format
         params = np.array([[alpha[0], alpha[1]], 
                         [alpha[3], alpha[4]]]) 
         biases = np.array([alpha[2], alpha[5]])  
         
-        # Get final predictions
+        #get linear combinations
         lin_combo = get_predictions_2d(alpha)
         
         return lin_combo, params, biases
 
     def robust_r2_score(y_true, y_pred):
         """
-        Calculate R² using only the best-fitting 90% of points (from min to 90th percentile of residuals)
-        This matches the robust regression approach.
-        """
-        residuals = np.square(y_true - y_pred)
+        Calculate R² using only the best-fitting 90% of points (robust R² metric).
         
-        # Use same percentile logic as robust regression
+        Args:
+            y_true (np.array): True values
+            y_pred (np.array): Predicted values
+        
+        Returns:
+            float: Robust R² score
+        """
+        #apply a mask to the worst fitting points
+        residuals = np.square(y_true - y_pred)
         bot = residuals.min()
         top = np.percentile(residuals, 90)
         mask = (residuals >= bot) & (residuals <= top)
         
-        # Calculate R² only on the masked (good) points
+        #calculate R² only on the masked (good) points
         y_true_masked = y_true[mask]
         y_pred_masked = y_pred[mask]
         
-        # Standard R² formula on masked data
-        ss_res = np.sum((y_true_masked - y_pred_masked) ** 2)
-        ss_tot = np.sum((y_true_masked - np.mean(y_true_masked)) ** 2)
-        
-        if ss_tot == 0:
-            return 1.0 if ss_res == 0 else 0.0
-        
-        return 1 - (ss_res / ss_tot)
+        return r2_score(y_true_masked, y_pred_masked)
 
     if robust:
-    
+        #this is the metholodology used originally in the paper but not mentioned
         lin_combo, params, biases = robust_linear_reg(expected_forces, msgs_to_compare)
         lin_combo1 = lin_combo[:, 0]
         lin_combo2 = lin_combo[:, 1]
@@ -236,6 +293,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         msg2_r2 = robust_r2_score(msgs_to_compare[:, 1], lin_combo2)
 
     else:
+        #does not mask outliers. produces worse fits and r2 scores obviously
         lin_combo, params, biases = linear_reg(expected_forces, msgs_to_compare)
         lin_combo1 = lin_combo[:, 0]
         lin_combo2 = lin_combo[:, 1]
@@ -250,6 +308,20 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
     return (msg1_r2, msg2_r2), (lin_combo1, lin_combo2), [a0_1, a1_1, a2_1], [a0_2, a1_2, a2_2], msgs_to_compare
 
 def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_path, epochs):
+    """
+    Create scatter plots comparing linear combinations of forces vs. actual message components.
+    
+    Args:
+        r2_scores (tuple): R² scores for each message dimension
+        lin_combos (tuple): Linear combination predictions for each dimension  
+        msgs_to_compare (np.array): Actual normalized message features [n_samples, 2]
+        params (tuple): Parameter lists [params1, params2] for each dimension
+        save_path (str): Directory path to save the plot
+        epochs (str): Epoch number for filename
+    
+    Returns:
+        matplotlib.figure.Figure: The created figure object
+    """
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
     
     for i in range(2):
@@ -259,23 +331,11 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         
         #plot points
         ax[i].scatter(x, y, alpha=0.1, s=0.1, color='blue')
-        
-        # #set limits
-        # xlim = np.array([np.percentile(x, q) for q in [10, 90]])
-        # ylim = np.array([np.percentile(y, q) for q in [10, 90]])
-        
-        # #add padding to the limits (same as in colab)
-        # xlim[0], xlim[1] = xlim[0] - (xlim[1] - xlim[0])*0.05, xlim[1] + (xlim[1] - xlim[0])*0.05
-        # ylim[0], ylim[1] = ylim[0] - (ylim[1] - ylim[0])*0.05, ylim[1] + (ylim[1] - ylim[0])*0.05
-        
-        # ax[i].set_xlim(xlim)
-        # ax[i].set_ylim(ylim)
 
         ax[i].set_xlim(-1,1)
         ax[i].set_ylim(-1,1)
         
         #y = x line 
-        # line_x = np.linspace(xlim[0], xlim[1], 100)
         line_x = np.linspace(-1, 1, 100)
         line_y = line_x
         ax[i].plot(line_x, line_y, color='black')
@@ -291,6 +351,21 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
     return fig
 
 def plot_linear_representation (model, input_data, sim='spring', model_type = 'L1', epochs = 30):
+    """
+    Generate complete linear representation analysis and visualisation for a trained model.
+    
+    Args:
+        model: Trained PyTorch geometric model
+        input_data (tuple): Tuple of (X_test, y_test) test data
+        sim (str): Simulation type 
+        model_type (str): Model type identifier for saving plots
+        epochs (str/int): Epoch number for filenames
+    
+    Returns:
+        tuple: (r2_scores, fig) where:
+            - r2_scores: Tuple of R² scores for both message dimensions
+            - fig: matplotlib figure object of the generated plots
+    """
 
     #get message features
     print('Extracting message features.')
@@ -311,6 +386,18 @@ def plot_linear_representation (model, input_data, sim='spring', model_type = 'L
     return r2_scores, fig
 
 def main():
+    """
+    Main function to run linear representation analysis from command line arguments.
+    
+    Supports analysing either a single model type or all model types ['standard', 'bottleneck', 'L1', 'KL'] for a system.
+    When analysing all models, saves R² scores to a JSON file for comparison.
+    
+    Command line arguments:
+        --dataset_name: Name of the dataset/simulation type
+        --model_type: Model type to analyze, or 'all' for all model types
+        --num_epoch: Epoch number of the trained model to load
+        --cutoff: Optional limit on number of test samples to use (default: 0, use all)
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset_name", type=str, required=True)
     parser.add_argument("--model_type", type=str, required=True)
@@ -319,17 +406,21 @@ def main():
 
     args = parser.parse_args()
    
+   #load the test data
     _, _, test_data = load_data(args.dataset_name)
     X_test, y_test = test_data
+
     cutoff = args.cutoff #option to use a smaller subset of the test set 
     if cutoff != 0:
         X_test = X_test[:cutoff]
         y_test = y_test[:cutoff]
 
+    #if you want to plot all the model types in the system...
     if args.model_type != 'all':
         model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
         plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)
 
+    #if you want to plot only a single model type
     else:
         model_types = ['standard', 'bottleneck', 'L1', 'KL']
         all_results = {}
@@ -344,10 +435,11 @@ def main():
                 'message_2_r2': float(r2_scores[1])
             }
             
-            plt.close(fig)  # Close figure to save memory
+
         save_path = f'linrepr_plots/{args.dataset_name}'
         os.makedirs(save_path, exist_ok=True)
-    
+
+        #save the r2 scores in a .JSON
         results_file = f'{save_path}/r2_scores_epoch_{args.num_epoch}.json'
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
