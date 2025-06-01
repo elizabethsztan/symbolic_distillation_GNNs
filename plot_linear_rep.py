@@ -154,6 +154,10 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         m1 = df.m1.values
         m2 = df.m2.values
         expected_forces = -m1[:, np.newaxis]*m2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**2)
+    elif sim == 'charge':
+        q1 = df.q1.values
+        q2 = df.q2.values
+        expected_forces =  q1[:, np.newaxis]*q2[:, np.newaxis]*dir_array / (bd_array[:, np.newaxis]**3)
 
     else:
         raise ValueError(f"Unknown simulation type: {sim}")
@@ -394,7 +398,7 @@ def main():
     
     Command line arguments:
         --dataset_name: Name of the dataset/simulation type
-        --model_type: Model type to analyze, or 'all' for all model types
+        --model_type: Model type to analyse, or 'all' for all model types
         --num_epoch: Epoch number of the trained model to load
         --cutoff: Optional limit on number of test samples to use (default: 0, use all)
     """
