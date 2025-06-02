@@ -13,8 +13,8 @@ import json
 import numpy as np
 import math
 
-# script_dir = os.path.dirname(os.path.abspath(__file__))
-script_dir = os.getcwd()
+script_dir = os.path.dirname(os.path.abspath(__file__))
+# script_dir = os.getcwd()
 
 def get_edge_index(num_nodes):
     """
@@ -278,31 +278,47 @@ class PruningGN(NBodyGNN):
         self.pruning_schedule = None 
         self.pruning_mask = torch.ones(self.message_dim_, dtype=torch.bool) #this is set during training
 
-    def set_pruning_schedule(self, total_epochs):
-        prune_end_epoch = 2 * total_epochs // 3  #stop pruning after 2/3 of training
-        prune_epochs = prune_end_epoch          #since pruning starts at epoch 0
+    def set_pruning_schedule(self, total_epochs, schedule='exp', end_epoch_frac = 0.75):
+        prune_end_epoch = int(end_epoch_frac * total_epochs)
+        # print(prune_end_epoch)
+        prune_epochs = prune_end_epoch
 
-        dims_to_prune = self.initial_message_dim - self.target_message_dim  #prune 98 dims
+        dims_to_prune = self.initial_message_dim - self.target_message_dim
+        schedule_dict = {}
 
-        schedule = {}
-        decay_rate = 3.0
-        max_decay = 1 - math.exp(-decay_rate)
+        if schedule == 'exp':
+            decay_rate = 3.0
+            max_decay = 1 - math.exp(-decay_rate)
 
-        for epoch in range(prune_end_epoch):
-            progress = epoch / prune_epochs
-            raw_decay = 1 - math.exp(-decay_rate * progress)
-            decay_factor = raw_decay / max_decay
+            for epoch in range(prune_end_epoch):
+                progress = epoch / prune_epochs
+                raw_decay = 1 - math.exp(-decay_rate * progress)
+                decay_factor = raw_decay / max_decay
 
-            dims_pruned = math.ceil(dims_to_prune * decay_factor)
-            target_dims = self.initial_message_dim - dims_pruned
-            target_dims = max(target_dims, self.target_message_dim)
-            schedule[epoch] = target_dims
+                dims_pruned = math.ceil(dims_to_prune * decay_factor)
+                target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
+                schedule_dict[epoch] = target_dims
 
-        # for the last 1/3 of training, keep target_message_dim
+        elif schedule == 'linear':
+            for epoch in range(prune_end_epoch):
+                progress = epoch / prune_epochs
+                dims_pruned = math.ceil(dims_to_prune * progress)
+                target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
+                schedule_dict[epoch] = target_dims
+
+        elif schedule == 'cosine':
+            for epoch in range(prune_end_epoch):
+                progress = epoch / prune_epochs
+                cosine_decay = 0.5 * (1 + math.cos(math.pi * progress))
+                dims_pruned = math.ceil(dims_to_prune * (1 - cosine_decay))
+                target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
+                schedule_dict[epoch] = target_dims
+
+        # Keep target_message_dim for the last 1/3 of training
         for epoch in range(prune_end_epoch, total_epochs):
-            schedule[epoch] = self.target_message_dim
+            schedule_dict[epoch] = self.target_message_dim
 
-        self.pruning_schedule = schedule
+        self.pruning_schedule = schedule_dict
 
 
     def update_pruning_mask(self, epoch, sample_data):
