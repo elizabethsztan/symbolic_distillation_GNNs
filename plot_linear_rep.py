@@ -334,7 +334,7 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         r2 = r2_scores[i]
         
         #plot points
-        ax[i].scatter(x, y, alpha=0.1, s=0.1, color='blue')
+        ax[i].scatter(x, y, alpha=0.1, s=0.2, edgecolors = 'black', facecolors='grey')
 
         ax[i].set_xlim(-1,1)
         ax[i].set_ylim(-1,1)
@@ -342,13 +342,13 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         #y = x line 
         line_x = np.linspace(-1, 1, 100)
         line_y = line_x
-        ax[i].plot(line_x, line_y, color='black')
+        ax[i].plot(line_x, line_y, color='black', lw =0.5)
 
         title = f"{params[i][1]:.2g} Fx + {params[i][2]:.2g} Fy + {params[i][0]:.2g}"
         ax[i].grid(True)
-        ax[i].set_xlabel("Linear combination of forces")
-        ax[i].set_ylabel(f"Message element {i+1}")
-        ax[i].set_title(f"R2 Score {r2:.5g}\n{title}")
+        ax[i].set_xlabel("Linear combination of forces", fontsize = 12)
+        ax[i].set_ylabel(f"Message element {i+1}", fontsize = 12)
+        ax[i].set_title(f"R2 Score {r2:.5g}\n{title}", fontsize = 12)
     
     plt.tight_layout()
     plt.savefig(f'{save_path}/epoch_{epochs}.png', dpi = 300)
