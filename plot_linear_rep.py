@@ -9,6 +9,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import os
 from model import load_model, get_edge_index
+from pruning_experiments import load_pruning_models
 from utils import load_data
 import argparse
 from scipy.optimize import minimize
@@ -389,6 +390,29 @@ def plot_linear_representation (model, input_data, sim='spring', model_type = 'L
     
     return r2_scores, fig
 
+def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
+    schedules = ['exp', 'linear', 'cosine']
+    end_epoch_fracs = [0.65, 0.75, 0.85]
+
+    r2_scores = {}
+    for schedule in schedules:
+        for frac in end_epoch_fracs:
+            model = load_pruning_models(dataset_name=sim, pruning_schedule=schedule, end_epoch_frac=frac, num_epoch = num_epoch)
+            print(f'Extracting message features for {schedule} schedule and {frac} end_epoch_frac.')
+            df, msg_array = get_message_features(model, input_data)
+            print('Fitting the forces to the two most important messages.')
+            r2_score, _,_, _ ,_ = fit_messages(df, msg_array, sim)
+            r2_scores[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
+    
+    print('Finished and saving R2 scores.')
+    save_path = f'linrepr_plots/pruning_experiments/{sim}'
+    os.makedirs(save_path, exist_ok=True)
+
+    #save the r2 scores in a .JSON
+    results_file = f'{save_path}/r2_scores_epoch_{num_epoch}.json'
+    with open(results_file, 'w') as f:
+        json.dump(r2_scores, f, indent=2)
+
 def main():
     """
     Main function to run linear representation analysis from command line arguments.
@@ -420,12 +444,7 @@ def main():
         y_test = y_test[:cutoff]
 
     #if you want to plot all the model types in the system...
-    if args.model_type != 'all':
-        model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
-        plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)
-
-    #if you want to plot only a single model type
-    else:
+    if args.model_type == 'all':
         model_types = ['standard', 'bottleneck', 'L1', 'KL']
         all_results = {}
         for model_type in model_types:
@@ -438,7 +457,6 @@ def main():
                 'message_1_r2': float(r2_scores[0]),
                 'message_2_r2': float(r2_scores[1])
             }
-            
 
         save_path = f'linrepr_plots/{args.dataset_name}'
         os.makedirs(save_path, exist_ok=True)
@@ -447,6 +465,15 @@ def main():
         results_file = f'{save_path}/r2_scores_epoch_{args.num_epoch}.json'
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
+            
+    #just get the r2 scores for the pruning experiments
+    elif args.model_type == 'pruning_experiments':
+        pruning_r2_scores((X_test, y_test), sim=args.dataset_name, num_epoch=args.num_epoch)
+    
+    #if you want to plot only a single model type
+    else:
+        model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
+        plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=args.model_type, epochs = args.num_epoch)  
         
 
 
