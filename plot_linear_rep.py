@@ -195,6 +195,12 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         frac_good = (msk).sum() / len(x)
         return x[msk].sum() / frac_good
     
+    def percentile_mask(x):
+        bot = x.min()
+        top = np.percentile(x, 90)
+        mask = (x >= bot) & (x <= top)
+        return mask
+    
     #linear reg
     def robust_linear_reg(expected_forces, msgs_to_compare):
         """
@@ -275,9 +281,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         """
         #apply a mask to the worst fitting points
         residuals = np.square(y_true - y_pred)
-        bot = residuals.min()
-        top = np.percentile(residuals, 90)
-        mask = (residuals >= bot) & (residuals <= top)
+        mask = percentile_mask(residuals)
         
         #calculate R² only on the masked (good) points
         y_true_masked = y_true[mask]
@@ -294,8 +298,29 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         a0_1, a1_1, a2_1 = biases[0], params[0,0], params[0,1] #msg1 params
         a0_2, a1_2, a2_2 = biases[1], params[1,0], params[1,1] #msg2 params
 
-        msg1_r2 = robust_r2_score(msgs_to_compare[:, 0], lin_combo1)
-        msg2_r2 = robust_r2_score(msgs_to_compare[:, 1], lin_combo2)
+        residuals1 = np.square(msgs_to_compare[:, 0] - lin_combo1)
+        residuals2 = np.square(msgs_to_compare[:, 1] - lin_combo2)
+
+        mask1 = percentile_mask(residuals1)
+        mask2 = percentile_mask(residuals2)
+
+        lin_combo1 = lin_combo1[mask1]
+        lin_combo2 = lin_combo2[mask2]
+        msgs_to_compare1 = msgs_to_compare[:,0][mask1]
+        msgs_to_compare2 = msgs_to_compare[:,1][mask2]
+
+        msg1_r2 = r2_score(msgs_to_compare1, lin_combo1)
+        msg2_r2 = r2_score(msgs_to_compare2, lin_combo2)
+
+        #make sure they have the same length by truncating to the shorter one
+        if len(msgs_to_compare1)!=len(msgs_to_compare2):
+            min_length = min(len(msgs_to_compare1), len(msgs_to_compare2))
+            msgs_to_compare1 = msgs_to_compare1[:min_length]
+            msgs_to_compare2 = msgs_to_compare2[:min_length]
+            lin_combo1 = lin_combo1[:min_length]
+            lin_combo2 = lin_combo1[:min_length]
+
+        msgs_to_compare = np.column_stack([msgs_to_compare1, msgs_to_compare2])
 
     else:
         #does not mask outliers. produces worse fits and r2 scores obviously
@@ -377,18 +402,25 @@ def plot_linear_representation (model, input_data, sim='spring', model_type = 'L
     df, msg_array = get_message_features(model, input_data)
     
     #fit the model using linear regression
-    print('Fitting the forces to the two most important messages.')
-    r2_scores, lin_combos, params1, params2 ,msgs_to_compare = fit_messages(df, msg_array, sim)
+    print('Fitting the forces to the two most important messages - robust.')
+    r2_scores, lin_combos, params1, params2 ,msgs_to_compare = fit_messages(df, msg_array, sim, robust=True)
     
     #plot linear representation of messages
     save_path = f'linrepr_plots/{sim}/{model_type}'
     os.makedirs(save_path, exist_ok=True)
     fig = plot_force_components(r2_scores, lin_combos, msgs_to_compare, (params1, params2), save_path, epochs)
     
-    print(f"Message 1 R2 Score: {r2_scores[0]:.5g}")
-    print(f"Message 2 R2 Score: {r2_scores[1]:.5g}")
+    print(f"ROBUST Message 1 R2 Score: {r2_scores[0]:.5g}")
+    print(f"ROBUST Message 2 R2 Score: {r2_scores[1]:.5g}")
+
+    print('Fitting the forces to the two most important messages - including outliers.')
+    r2_scores_w_outliers, lin_combos, params1, params2 ,msgs_to_compare = fit_messages(df, msg_array, sim, robust=False)
+
+    save_path = f'linrepr_plots/{sim}/{model_type}/with_outliers'
+    os.makedirs(save_path, exist_ok=True)
+    fig = plot_force_components(r2_scores, lin_combos, msgs_to_compare, (params1, params2), save_path, epochs)
     
-    return r2_scores, fig
+    return (r2_scores, r2_scores_w_outliers), fig
 
 def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
     schedules = ['exp', 'linear', 'cosine']
@@ -397,19 +429,33 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
     save_path = f'linrepr_plots/pruning_experiments/{sim}'
     os.makedirs(save_path, exist_ok=True)
     r2_scores = {}
+    r2_scores_w_outliers = {}
     for schedule in schedules:
         for frac in end_epoch_fracs:
             model = load_pruning_models(dataset_name=sim, pruning_schedule=schedule, end_epoch_frac=frac, num_epoch = num_epoch)
             print(f'Extracting message features for {schedule} schedule and {frac} end_epoch_frac.')
             df, msg_array = get_message_features(model, input_data)
-            print('Fitting the forces to the two most important messages.')
-            r2_score, lin_combos,params1, params2 ,msg_to_compare = fit_messages(df, msg_array, sim)
+
+            print('Fitting the forces to the two most important messages - robust.')
+            r2_score, lin_combos,params1, params2 ,msg_to_compare = fit_messages(df, msg_array, sim, robust = True)
             new_save_path = f'{save_path}/{schedule}/{frac}'
             os.makedirs(new_save_path, exist_ok=True)
             print('Plotting.')
             plot_force_components(r2_score, lin_combos, msg_to_compare, (params1, params2), new_save_path, num_epoch)
+
             r2_scores[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
+            print(f"ROBUST R2 Scores: {r2_score[0]}, {r2_score[1]}")
+
+            print('Fitting the forces to the two most important messages - with outliers.')
+            r2_score, lin_combos,params1, params2 ,msg_to_compare = fit_messages(df, msg_array, sim, robust = False)
+            new_save_path = f'{save_path}/{schedule}/{frac}/with_outliers'
+            os.makedirs(new_save_path, exist_ok=True)
+            print('Plotting.')
+            plot_force_components(r2_score, lin_combos, msg_to_compare, (params1, params2), new_save_path, num_epoch)
+
+            r2_scores_w_outliers[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
             print(f"R2 Scores: {r2_score[0]}, {r2_score[1]}")
+
     
     print('Finished and saving R2 scores.')
 
@@ -418,6 +464,10 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
     results_file = f'{save_path}/r2_scores_epoch_{num_epoch}.json'
     with open(results_file, 'w') as f:
         json.dump(r2_scores, f, indent=2)
+
+    results_file = f'{save_path}/r2_scores_w_outliers_epoch_{num_epoch}.json'
+    with open(results_file, 'w') as f:
+        json.dump(r2_scores_w_outliers, f, indent=2)
 
 def main():
     """
@@ -456,12 +506,15 @@ def main():
         for model_type in model_types:
             model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
             print(f"\nProcessing model type: {model_type}")
-            r2_scores, fig = plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=model_type, epochs=args.num_epoch)
-            
+            r2_scores_tuple, fig = plot_linear_representation(model, (X_test, y_test), sim=args.dataset_name, model_type=model_type, epochs=args.num_epoch)
+            r2_scores = r2_scores_tuple[0]
+            r2_scores_w_outliers = r2_scores_tuple[1]
             # Store results
             all_results[model_type] = {
-                'message_1_r2': float(r2_scores[0]),
-                'message_2_r2': float(r2_scores[1])
+                'robust message_1_r2': float(r2_scores[0]),
+                'robust message_2_r2': float(r2_scores[1]),
+                'message_1_r2': float(r2_scores_w_outliers[0]),
+                'message_2_r2': float(r2_scores_w_outliers[1])
             }
 
         save_path = f'linrepr_plots/{args.dataset_name}'
