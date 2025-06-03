@@ -211,7 +211,8 @@ def main():
 
     train_data, val_data, _ = load_and_process(data_path, seed)
 
-    schedules = ['exp', 'linear', 'cosine']
+    # schedules = ['exp', 'linear', 'cosine']
+    schedules = ['cosine']
     # end_epoch_fracs = [0.65, 0.75, 0.85]
     end_epoch_fracs = [0.65, 0.75]
 
