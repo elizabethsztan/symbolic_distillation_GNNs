@@ -394,6 +394,8 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
     schedules = ['exp', 'linear', 'cosine']
     end_epoch_fracs = [0.65, 0.75, 0.85]
 
+    save_path = f'linrepr_plots/pruning_experiments/{sim}'
+    os.makedirs(save_path, exist_ok=True)
     r2_scores = {}
     for schedule in schedules:
         for frac in end_epoch_fracs:
@@ -401,12 +403,16 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
             print(f'Extracting message features for {schedule} schedule and {frac} end_epoch_frac.')
             df, msg_array = get_message_features(model, input_data)
             print('Fitting the forces to the two most important messages.')
-            r2_score, _,_, _ ,_ = fit_messages(df, msg_array, sim)
+            r2_score, lin_combos,params1, params2 ,msg_to_compare = fit_messages(df, msg_array, sim)
+            new_save_path = f'{save_path}/{schedule}/{frac}'
+            os.makedirs(new_save_path, exist_ok=True)
+            print('Plotting.')
+            plot_force_components(r2_score, lin_combos, msg_to_compare, (params1, params2), new_save_path, num_epoch)
             r2_scores[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
+            print(f"R2 Scores: {r2_score[0]}, {r2_score[1]}")
     
     print('Finished and saving R2 scores.')
-    save_path = f'linrepr_plots/pruning_experiments/{sim}'
-    os.makedirs(save_path, exist_ok=True)
+
 
     #save the r2 scores in a .JSON
     results_file = f'{save_path}/r2_scores_epoch_{num_epoch}.json'
@@ -465,7 +471,7 @@ def main():
         results_file = f'{save_path}/r2_scores_epoch_{args.num_epoch}.json'
         with open(results_file, 'w') as f:
             json.dump(all_results, f, indent=2)
-            
+
     #just get the r2 scores for the pruning experiments
     elif args.model_type == 'pruning_experiments':
         pruning_r2_scores((X_test, y_test), sim=args.dataset_name, num_epoch=args.num_epoch)
