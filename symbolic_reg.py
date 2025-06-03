@@ -4,6 +4,7 @@ from model import load_model
 from utils import load_data
 import numpy as np
 from pysr import PySRRegressor
+import sympy
 print("PySR imported successfully!")
 
 def get_pysr_variables(model, input_data):
@@ -40,16 +41,23 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
     #set up the regressor
     regressor = PySRRegressor(
         maxsize=20,
-        niterations=niterations,  # < Increase me for better results
-        binary_operators=["+", "*"],
+        niterations=niterations,
+        binary_operators=["+", "*", ">", "<", "cond"],
         unary_operators=[
-            "inv(x) = 1/x"
+            "inv(x) = 1/x",
+            "exp",
+            "log"
         ],
-        extra_sympy_mappings={"inv": lambda x: 1 / x},
-        elementwise_loss="loss(prediction, target) = abs(prediction - target)", #MAE loss
-        parsimony=0.05, #penalise complexity
+        extra_sympy_mappings={
+            "inv": lambda x: 1 / x
+        },
+        constraints={'exp': (1), 'log': (1)},
+        complexity_of_operators={"exp": 3, "log": 3, "^": 3},
+        elementwise_loss="loss(prediction, target) = abs(prediction - target)",
+        parsimony=0.05,
         batching=True
     )
+
 
     regressor.fit(variables_subset, target_subset)
 
