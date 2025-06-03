@@ -12,6 +12,7 @@ from datetime import datetime
 import json
 import numpy as np
 import argparse
+from model import create_model
 from utils import load_and_process
 
 from model import get_edge_index, PruningGN
@@ -197,6 +198,28 @@ def train_pruning_models(model, train_data, val_data, num_epoch, dataset_name = 
 
     return model
 
+def load_pruning_models(dataset_name, pruning_schedule, end_epoch_frac, num_epoch):
+        checkpoint = torch.load(
+        f'model_weights/pruning_experiments/{dataset_name}/{pruning_schedule}/end_epoch_frac{end_epoch_frac}_epoch{num_epoch}_model.pth',
+        map_location=torch.device('cpu')  # This maps GPU tensors to CPU
+    )
+        model = create_model(
+            model_type='pruning',
+            node_dim=checkpoint['node_dim'],
+            acc_dim=checkpoint['acc_dim'],
+            hidden_dim=checkpoint['hidden_dim'], 
+        )
+        model.pruning_mask = checkpoint['pruning_mask']
+        model.current_message_dim = checkpoint['current_message_dim']
+        model.initial_message_dim = checkpoint['initial_message_dim']
+        model.target_message_dim = checkpoint['target_message_dim']
+
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+
+        return model
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--save', action='store_true')
@@ -211,10 +234,8 @@ def main():
 
     train_data, val_data, _ = load_and_process(data_path, seed)
 
-    # schedules = ['exp', 'linear', 'cosine']
-    schedules = ['cosine']
-    # end_epoch_fracs = [0.65, 0.75, 0.85]
-    end_epoch_fracs = [0.65, 0.75]
+    schedules = ['exp', 'linear', 'cosine']
+    end_epoch_fracs = [0.65, 0.75, 0.85]
 
     for schedule in schedules:
         for end_epoch_frac in end_epoch_fracs:
