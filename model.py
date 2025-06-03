@@ -369,9 +369,6 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
     if model_type == 'bottleneck':
         assert model.message_dim_ == acc_dim, 'Bottleneck model, but message dimensions do not match dimensionality of system.' 
-
-    if model_type == 'pruning':
-        model.set_pruning_schedule(num_epoch)
     
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     batch_size = int(64*(4/input_data.shape[1])**2) 
@@ -419,7 +416,7 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
 
     if model_type == 'pruning':
          #use the validation data to check important messages for pruning
-        idx = np.random.choice(len(val_dataset), size=1024, replace=False)
+        idx = np.random.choice(len(val_dataset), size=10_240, replace=False)
         sample_data = [
             Data(
                 x=val_dataset[i].x.clone(),
