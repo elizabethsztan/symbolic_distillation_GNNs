@@ -418,7 +418,7 @@ def plot_linear_representation (model, input_data, sim='spring', model_type = 'L
 
     save_path = f'linrepr_plots/{sim}/{model_type}/with_outliers'
     os.makedirs(save_path, exist_ok=True)
-    fig = plot_force_components(r2_scores, lin_combos, msgs_to_compare, (params1, params2), save_path, epochs)
+    fig = plot_force_components(r2_scores_w_outliers, lin_combos, msgs_to_compare, (params1, params2), save_path, epochs)
     
     return (r2_scores, r2_scores_w_outliers), fig
 
