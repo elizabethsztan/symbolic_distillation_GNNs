@@ -22,5 +22,11 @@
     "robust message_2_r2": 0.0,
     "message_1_r2": 1.0,
     "message_2_r2": 1.0
+  },
+  "pruning": {
+    "robust message_1_r2": 0.9980563065203345,
+    "robust message_2_r2": 0.9973397756972913,
+    "message_1_r2": 0.7913058400154114,
+    "message_2_r2": 0.5822243690490723
   }
 }
