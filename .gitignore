@@ -17,6 +17,7 @@ train_val_test_data/
 
 #saved models
 model_weights/
+pysr_objects/
 
 wandb/
 .DS_Store
