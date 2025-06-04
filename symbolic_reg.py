@@ -42,19 +42,31 @@ def get_pysr_variables(model, input_data):
 
     return target_message, variables
 
-def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, save_path = None, model_type = 'run'):
+def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, model_type = 'run'):
     np.random.seed(290402)
     #get a smaller random subset of points because we have too many edge messages
     idx = np.random.choice(len(target_message), size=num_points, replace=False)
     target_subset = target_message[idx]
     variables_subset = variables[idx]
 
+    config = {'parsimony': 0.01, 
+              'complexity_of_constants': 1}
+    
+    if dataset_name == 'r2':
+        config['parsimony'] = 0.01
+        config['complexity_of_constants'] = 2.5
+
+    elif dataset_name == 'charge' or dataset_name == 'spring':
+        config['parsimony'] = 0.05
+        config['complexity_of_constants'] = 1.5
+
     print(f'Performing SR on the messages.')
     #set up the regressor
     regressor = PySRRegressor(
-        maxsize=10,
+        maxsize=20,
         niterations=niterations,
-        binary_operators=["+", "*", ">", "<", "cond"],
+        # binary_operators=["+", "*", ">", "<", "cond"],
+        binary_operators=["+", "*"],
         unary_operators=[
             "inv(x) = 1/x",
             "exp",
@@ -64,9 +76,11 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
             "inv": lambda x: 1 / x
         },
         constraints={'exp': (1), 'log': (1)},
-        complexity_of_operators={"exp": 3, "log": 3, "^": 3, "cond": 3},
+        # complexity_of_operators={"exp": 3, "log": 3, "^": 3, "cond": 3},
+        complexity_of_operators={"exp": 3, "log": 3, "^": 3},
+        complexity_of_constants=config['complexity_of_constants'],
         elementwise_loss="loss(prediction, target) = abs(prediction - target)",
-        parsimony=0.05,
+        parsimony=config['parsimony'],
         batching=True, 
         output_directory = save_path, 
         run_id = model_type
@@ -84,7 +98,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset_name', type=str, required=True)
     parser.add_argument("--model_type", type=str, required=True)
-    parser.add_argument('--num_points', type=int, default = 5_000)
+    parser.add_argument('--num_points', type=int, default = 6_000)
     parser.add_argument('--niterations', type=int, default = 1_000)
     parser.add_argument("--num_epoch", type=str, default = 100)
     parser.add_argument('--save', action='store_true')
@@ -103,7 +117,7 @@ def main():
             target_message, variables = get_pysr_variables(model, test_data)
 
             regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                        niterations=args.niterations, save_path=save_path, model_type=model_type)
+                        niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=model_type)
 
             metrics = {'best_eqn': regressor.get_best()['equation'], 
                     'num_points': args.num_points,
@@ -120,7 +134,7 @@ def main():
         target_message, variables = get_pysr_variables(model, test_data)
 
         regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                    niterations=args.niterations, save_path=save_path, model_type=args.model_type)
+                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=args.model_type)
 
         metrics = {'best_eqn': regressor.get_best()['equation'], 
                 'num_points': args.num_points,
