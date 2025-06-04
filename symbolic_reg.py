@@ -4,7 +4,10 @@ from model import load_model
 from utils import load_data
 import numpy as np
 from pysr import PySRRegressor
-import sympy
+import argparse
+import os
+import pickle
+import json
 print("PySR imported successfully!")
 
 def get_pysr_variables(model, input_data):
@@ -30,7 +33,7 @@ def get_pysr_variables(model, input_data):
 
     return target_message, variables
 
-def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000):
+def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, save_path = None, model_type = 'run'):
     np.random.seed(290402)
     #get a smaller random subset of points because we have too many edge messages
     idx = np.random.choice(len(target_message), size=num_points, replace=False)
@@ -55,7 +58,9 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
         complexity_of_operators={"exp": 3, "log": 3, "^": 3},
         elementwise_loss="loss(prediction, target) = abs(prediction - target)",
         parsimony=0.05,
-        batching=True
+        batching=True, 
+        output_directory = save_path, 
+        run_id = model_type
     )
 
 
@@ -67,10 +72,39 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
     return regressor
 
 def main():
-    model = load_model(dataset_name='spring', model_type='L1', num_epoch='100')
-    _, _, test_data = load_data('spring')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset_name', type=str, required=True)
+    parser.add_argument("--model_type", type=str, required=True)
+    parser.add_argument('--num_points', type=int, default = 5_000)
+    parser.add_argument('--niterations', type=int, default = 1_000)
+    parser.add_argument("--num_epoch", type=str, default = 100)
+    parser.add_argument('--save', action='store_true')
+    
+    args = parser.parse_args()
+    _, _, test_data = load_data(args.dataset_name)
+    model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
+    
     target_message, variables = get_pysr_variables(model, test_data)
-    regressor = perform_sr(target_message, variables, niterations=1000)
+
+    if args.save == False:
+        regressor = perform_sr(target_message, variables, num_points = args.num_points,
+                            niterations=args.niterations)
+    
+    else:
+        save_path = f'pysr_objects/{args.dataset_name}'
+        os.makedirs(save_path, exist_ok=True)
+        regressor = perform_sr(target_message, variables, num_points = args.num_points,
+                    niterations=args.niterations, save_path=save_path, model_type=args.model_type)
+
+        metrics = {'best_eqn': regressor.get_best()['equation'], 
+                'num_points': args.num_points,
+                'niterations': args.niterations,
+                'GNN_epochs': args.num_epoch
+                }
+        
+        with open(f'{save_path}/{args.model_type}_sr_metrics.json', 'w') as f:
+            json.dump(metrics, f, indent = 2)
+
     print(regressor.get_best()['equation'])
 
 if __name__ == "__main__":
