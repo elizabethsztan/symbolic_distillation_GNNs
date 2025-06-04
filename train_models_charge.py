@@ -48,8 +48,10 @@ def main():
     # print("\n=== Testing pruning Model ===")
     # model_type = 'pruning'
     # model = create_model(model_type = model_type)
+    # model.set_pruning_schedule(args.epoch, schedule='cosine', end_epoch_frac=0.65)
     # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
     #               save=args.save, wandb_log=args.wandb_log)
+    
     
 
 if __name__ == "__main__":
