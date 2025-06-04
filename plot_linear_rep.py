@@ -268,27 +268,6 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         
         return lin_combo, params, biases
 
-    def robust_r2_score(y_true, y_pred):
-        """
-        Calculate R² using only the best-fitting 90% of points (robust R² metric).
-        
-        Args:
-            y_true (np.array): True values
-            y_pred (np.array): Predicted values
-        
-        Returns:
-            float: Robust R² score
-        """
-        #apply a mask to the worst fitting points
-        residuals = np.square(y_true - y_pred)
-        mask = percentile_mask(residuals)
-        
-        #calculate R² only on the masked (good) points
-        y_true_masked = y_true[mask]
-        y_pred_masked = y_pred[mask]
-        
-        return r2_score(y_true_masked, y_pred_masked)
-
     if robust:
         #this is the metholodology used originally in the paper but not mentioned
         lin_combo, params, biases = robust_linear_reg(expected_forces, msgs_to_compare)
@@ -444,7 +423,7 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
             plot_force_components(r2_score, lin_combos, msg_to_compare, (params1, params2), new_save_path, num_epoch)
 
             r2_scores[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
-            print(f"ROBUST R2 Scores: {r2_score[0]}, {r2_score[1]}")
+            print(f"R2 Scores (robust): {r2_score[0]}, {r2_score[1]}")
 
             print('Fitting the forces to the two most important messages - with outliers.')
             r2_score, lin_combos,params1, params2 ,msg_to_compare = fit_messages(df, msg_array, sim, robust = False)
@@ -454,7 +433,7 @@ def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
             plot_force_components(r2_score, lin_combos, msg_to_compare, (params1, params2), new_save_path, num_epoch)
 
             r2_scores_w_outliers[f'{schedule}_{frac}'] = {"message_1_r2":r2_score[0], "message_2_r2":r2_score[1]}
-            print(f"R2 Scores: {r2_score[0]}, {r2_score[1]}")
+            print(f"R2 Scores (for all data): {r2_score[0]}, {r2_score[1]}")
 
     
     print('Finished and saving R2 scores.')
