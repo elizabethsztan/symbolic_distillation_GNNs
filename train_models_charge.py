@@ -33,17 +33,17 @@ def main():
     # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
     #               save=args.save, wandb_log=args.wandb_log)
 
-    print("\n=== Testing bottleneck Model ===")
-    model_type = 'bottleneck'
-    model = create_model(model_type = model_type)
-    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
-                  save=args.save, wandb_log=args.wandb_log)
-
-    # print("\n=== Testing KL Model ===")
-    # model_type = 'KL'
+    # print("\n=== Testing bottleneck Model ===")
+    # model_type = 'bottleneck'
     # model = create_model(model_type = model_type)
     # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
     #               save=args.save, wandb_log=args.wandb_log)
+
+    print("\n=== Testing KL Model ===")
+    model_type = 'KL'
+    model = create_model(model_type = model_type)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
 
     # print("\n=== Testing pruning Model ===")
     # model_type = 'pruning'
