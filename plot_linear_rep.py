@@ -480,7 +480,7 @@ def main():
 
     #if you want to plot all the model types in the system...
     if args.model_type == 'all':
-        model_types = ['standard', 'bottleneck', 'L1', 'KL']
+        model_types = ['standard', 'bottleneck', 'L1', 'KL', 'pruning']
         all_results = {}
         for model_type in model_types:
             model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
