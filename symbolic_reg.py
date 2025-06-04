@@ -11,7 +11,7 @@ import json
 print("PySR imported successfully!")
 
 def get_pysr_variables(model, input_data):
-    sr_vars = ['dx', 'dy', 'r', 'm1', 'm2'] #you can change this if you want to include others in the regression
+    sr_vars = ['dx', 'dy', 'r', 'm1', 'm2', 'q1', 'q2'] #you can change this if you want to include others in the regression
 
     print(f'Variables considered in the SR are {sr_vars}.')
 
