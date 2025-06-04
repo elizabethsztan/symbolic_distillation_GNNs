@@ -27,7 +27,16 @@ def get_pysr_variables(model, input_data):
         msg_array = msg_array[0]
         KL_div =  (np.exp(logvar_array) + msg_array**2 - logvar_array)/2
         KL_mean = KL_div.mean(axis=0)
-        most_important = np.argsort(KL_mean)[-1:]
+        most_important = np.argsort(KL_mean.values)[-1:]
+    # print(f"Model type: {model.model_type_}")
+    # print(f"most_important: {most_important}")
+    # print(f"most_important[0]: {most_important[0]}")
+    # print(f"Type of most_important[0]: {type(most_important[0])}")
+    # print(f"Column name to access: 'e{most_important[0]}'")
+    # print(f"DataFrame shape: {df.shape}")
+    # print(f"DataFrame columns: {list(df.columns)}")
+    # print(f"Does column exist? {'e' + str(most_important[0]) in df.columns}")
+    # print(f"Type of df: {type(df)}")
     target_message = df[f'e{most_important[0]}'].to_numpy().reshape(-1, 1)
     variables = df[sr_vars].to_numpy()
 
@@ -43,7 +52,7 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
     print(f'Performing SR on the messages.')
     #set up the regressor
     regressor = PySRRegressor(
-        maxsize=20,
+        maxsize=10,
         niterations=niterations,
         binary_operators=["+", "*", ">", "<", "cond"],
         unary_operators=[
@@ -55,7 +64,7 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
             "inv": lambda x: 1 / x
         },
         constraints={'exp': (1), 'log': (1)},
-        complexity_of_operators={"exp": 3, "log": 3, "^": 3},
+        complexity_of_operators={"exp": 3, "log": 3, "^": 3, "cond": 3},
         elementwise_loss="loss(prediction, target) = abs(prediction - target)",
         parsimony=0.05,
         batching=True, 
@@ -82,17 +91,34 @@ def main():
     
     args = parser.parse_args()
     _, _, test_data = load_data(args.dataset_name)
-    model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
-    
-    target_message, variables = get_pysr_variables(model, test_data)
+    save_path = f'pysr_objects/{args.dataset_name}/nit_{args.niterations}'
+    os.makedirs(save_path, exist_ok=True)
+    if args.model_type == 'all':
+        model_types = ['standard', 'L1', 'bottleneck', 'KL', 'pruning']
 
-    if args.save == False:
-        regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                            niterations=args.niterations)
+        for model_type in model_types:
+            print(f'Running SR on {model_type} model.')
+            model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
     
+            target_message, variables = get_pysr_variables(model, test_data)
+
+            regressor = perform_sr(target_message, variables, num_points = args.num_points,
+                        niterations=args.niterations, save_path=save_path, model_type=model_type)
+
+            metrics = {'best_eqn': regressor.get_best()['equation'], 
+                    'num_points': args.num_points,
+                    'niterations': args.niterations,
+                    'GNN_epochs': args.num_epoch
+                    }
+            
+            with open(f'{save_path}/{model_type}_sr_metrics.json', 'w') as f:
+                json.dump(metrics, f, indent = 2)
+
+            print(regressor.get_best()['equation'])
     else:
-        save_path = f'pysr_objects/{args.dataset_name}'
-        os.makedirs(save_path, exist_ok=True)
+        model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
+        target_message, variables = get_pysr_variables(model, test_data)
+
         regressor = perform_sr(target_message, variables, num_points = args.num_points,
                     niterations=args.niterations, save_path=save_path, model_type=args.model_type)
 
@@ -105,7 +131,8 @@ def main():
         with open(f'{save_path}/{args.model_type}_sr_metrics.json', 'w') as f:
             json.dump(metrics, f, indent = 2)
 
-    print(regressor.get_best()['equation'])
+        print(regressor.get_best()['equation'])
+
 
 if __name__ == "__main__":
     main()
