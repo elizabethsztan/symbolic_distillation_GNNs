@@ -11,7 +11,7 @@ import json
 print("PySR imported successfully!")
 
 def get_pysr_variables(model, input_data):
-    sr_vars = ['dx', 'dy', 'r', 'm1', 'm2', 'q1', 'q2'] #you can change this if you want to include others in the regression
+    sr_vars = ['dx', 'dy', 'bd', 'm1', 'm2', 'q1', 'q2'] #you can change this if you want to include others in the regression
 
     print(f'Variables considered in the SR are {sr_vars}.')
 
@@ -40,30 +40,28 @@ def get_pysr_variables(model, input_data):
     target_message = df[f'e{most_important[0]}'].to_numpy().reshape(-1, 1)
     variables = df[sr_vars].to_numpy()
 
-    return target_message, variables
+    return target_message, variables, sr_vars
 
-def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, model_type = 'run'):
+def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, model_type = 'run', variable_names = None):
     np.random.seed(290402)
     #get a smaller random subset of points because we have too many edge messages
     idx = np.random.choice(len(target_message), size=num_points, replace=False)
     target_subset = target_message[idx]
     variables_subset = variables[idx]
 
-    config = {'parsimony': 0.01, 
-              'complexity_of_constants': 1}
-    
-    if dataset_name == 'r2':
-        config['parsimony'] = 0.01
-        config['complexity_of_constants'] = 2.5
+    config = {'parsimony': 0.05, 
+              'complexity_of_constants': 1, 
+              'maxsize': 23}
 
-    elif dataset_name == 'charge' or dataset_name == 'spring':
-        config['parsimony'] = 0.05
-        config['complexity_of_constants'] = 1.5
+    if dataset_name == 'charge':
+        config['maxsize']= 25
+
+    
 
     print(f'Performing SR on the messages.')
     #set up the regressor
     regressor = PySRRegressor(
-        maxsize=20,
+        maxsize=config['maxsize'],
         niterations=niterations,
         # binary_operators=["+", "*", ">", "<", "cond"],
         binary_operators=["+", "*"],
@@ -83,7 +81,9 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
         parsimony=config['parsimony'],
         batching=True, 
         output_directory = save_path, 
-        run_id = model_type
+        run_id = model_type, 
+        weight_optimize=0.01
+        # variable_names = variable_names
     )
 
 
@@ -114,10 +114,10 @@ def main():
             print(f'Running SR on {model_type} model.')
             model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
     
-            target_message, variables = get_pysr_variables(model, test_data)
+            target_message, variables, names = get_pysr_variables(model, test_data)
 
             regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                        niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=model_type)
+                        niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=model_type, variable_names= names)
 
             metrics = {'best_eqn': regressor.get_best()['equation'], 
                     'num_points': args.num_points,
@@ -131,10 +131,10 @@ def main():
             print(regressor.get_best()['equation'])
     else:
         model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
-        target_message, variables = get_pysr_variables(model, test_data)
+        target_message, variables, names = get_pysr_variables(model, test_data)
 
         regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=args.model_type)
+                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=args.model_type, variable_names=names)
 
         metrics = {'best_eqn': regressor.get_best()['equation'], 
                 'num_points': args.num_points,
