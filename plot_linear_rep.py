@@ -250,7 +250,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
             lincomb2 = (alpha[3] * expected_forces[:, 0] + alpha[4] * expected_forces[:, 1]) + alpha[5]
             return np.column_stack([lincomb1, lincomb2])
         
-        #initialise parameters just at zero
+        #initialise parameters just at ones
         initial_params = np.ones(6)
         
         #optimise
