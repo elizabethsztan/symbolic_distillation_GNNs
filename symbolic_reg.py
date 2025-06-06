@@ -11,8 +11,8 @@ import json
 print("PySR imported successfully!")
 
 def get_pysr_variables(model, input_data):
-    sr_vars = ['dx', 'dy', 'bd', 'm1', 'm2', 'q1', 'q2'] #you can change this if you want to include others in the regression
-
+    sr_vars = ['dx', 'dy', 'bd' , 'm1', 'm2', 'q1', 'q2'] #you can change this if you want to include others in the regression
+    variable_names = ['dx', 'dy','r', 'm_one', 'm_two', 'q_one', 'q_two'] #recasted bd as r 
     print(f'Variables considered in the SR are {sr_vars}.')
 
     #getting message for KL is different 
@@ -40,7 +40,7 @@ def get_pysr_variables(model, input_data):
     target_message = df[f'e{most_important[0]}'].to_numpy().reshape(-1, 1)
     variables = df[sr_vars].to_numpy()
 
-    return target_message, variables, sr_vars
+    return target_message, variables, variable_names
 
 def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, model_type = 'run', variable_names = None):
     np.random.seed(290402)
@@ -54,7 +54,8 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
               'maxsize': 23}
 
     if dataset_name == 'charge':
-        config['maxsize']= 25
+        config['maxsize']= 35
+        config['parsimony'] = 0.05
 
     
 
@@ -81,13 +82,11 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
         parsimony=config['parsimony'],
         batching=True, 
         output_directory = save_path, 
-        run_id = model_type, 
-        weight_optimize=0.01
-        # variable_names = variable_names
+        run_id = model_type
     )
 
 
-    regressor.fit(variables_subset, target_subset)
+    regressor.fit(variables_subset, target_subset, variable_names = variable_names)
 
     # best_eq = regressor.get_best()['equation']
     # print(f'The best equation found was {best_eq}')
