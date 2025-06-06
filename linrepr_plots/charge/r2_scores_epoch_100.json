@@ -18,10 +18,10 @@
     "message_2_r2": 0.07777392864227295
   },
   "KL": {
-    "robust message_1_r2": 0.0,
-    "robust message_2_r2": 0.0,
-    "message_1_r2": 1.0,
-    "message_2_r2": 1.0
+    "robust message_1_r2": 0.008481505673301748,
+    "robust message_2_r2": 0.049475429559457385,
+    "message_1_r2": 0.21507102251052856,
+    "message_2_r2": 0.2949810028076172
   },
   "pruning": {
     "robust message_1_r2": 0.9980563065203345,
