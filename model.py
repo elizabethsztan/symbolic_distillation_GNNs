@@ -614,8 +614,7 @@ def load_model(dataset_name, model_type, num_epoch):
     
     return model
 
-def test(model, test_data):
-
+def test(model, test_data, model_type):
     input_data, acc = test_data
     edge_index = get_edge_index(input_data.shape[1])
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
@@ -629,7 +628,12 @@ def test(model, test_data):
         for datapoints in dataloader:
             # Get batch size
             cur_bs = int(datapoints.batch[-1] + 1)
-            loss = model.loss(datapoints, augment=False)
+            
+            # Handle different model types like in validation
+            if model_type in {'standard', 'bottleneck', 'pruning'}:
+                loss = model.loss(datapoints, augment=False)
+            else: 
+                loss, _ = model.loss(datapoints, augment=False)
             
             total_loss += loss.item()
             samples += cur_bs
