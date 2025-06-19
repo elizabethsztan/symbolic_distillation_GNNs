@@ -191,9 +191,9 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         x = x.ravel()
         bot = x.min()
         top = np.percentile(x, 90)
-        msk = (x >= bot) & (x <= top)
-        frac_good = (msk).sum() / len(x)
-        return x[msk].sum() / frac_good
+        mask = (x >= bot) & (x <= top)
+        frac_good = (mask).sum() / len(x)
+        return x[mask].sum() / frac_good
     
     def percentile_mask(x):
         bot = x.min()
@@ -323,7 +323,7 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
     Args:
         r2_scores (tuple): R² scores for each message dimension
         lin_combos (tuple): Linear combination predictions for each dimension  
-        msgs_to_compare (np.array): Actual normalized message features [n_samples, 2]
+        msgs_to_compare (np.array): Actual normalised message features [n_samples, 2]
         params (tuple): Parameter lists [params1, params2] for each dimension
         save_path (str): Directory path to save the plot
         epochs (str): Epoch number for filename
