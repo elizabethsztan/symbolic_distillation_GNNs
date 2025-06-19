@@ -20,14 +20,16 @@ def get_pysr_variables(model, input_data):
     if model.model_type_ != 'KL':
         df, msg_array = get_message_features(model, input_data)
         msg_importance = msg_array.std(axis=0) #computes stds for each msg_dim over all datapoints
-        most_important = np.argsort(msg_importance)[-1:]
+        most_important1 = np.argsort(msg_importance)[-1:]
+        most_important2 = np.argsort(msg_importance)[-2:]
     else: 
         df, msg_array = get_message_features(model, input_data)
         logvar_array = msg_array[1]
         msg_array = msg_array[0]
         KL_div =  (np.exp(logvar_array) + msg_array**2 - logvar_array)/2
         KL_mean = KL_div.mean(axis=0)
-        most_important = np.argsort(KL_mean.values)[-1:]
+        most_important1 = np.argsort(KL_mean.values)[-1:]
+        most_important2 = np.argsort(KL_mean.values)[-2:]
     # print(f"Model type: {model.model_type_}")
     # print(f"most_important: {most_important}")
     # print(f"most_important[0]: {most_important[0]}")
@@ -37,12 +39,19 @@ def get_pysr_variables(model, input_data):
     # print(f"DataFrame columns: {list(df.columns)}")
     # print(f"Does column exist? {'e' + str(most_important[0]) in df.columns}")
     # print(f"Type of df: {type(df)}")
-    target_message = df[f'e{most_important[0]}'].to_numpy().reshape(-1, 1)
+    target_message1 = df[f'e{most_important1[0]}'].to_numpy().reshape(-1, 1)
+    # threshold1 = np.percentile(target_message1, 90)
+    # target_message1_filtered = target_message1[target_message1 <= threshold1].reshape(-1, 1)
+
+    target_message2 = df[f'e{most_important2[0]}'].to_numpy().reshape(-1, 1)
+    # threshold2 = np.percentile(target_message2, 90)
+    # target_message2_filtered = target_message2[target_message2 <= threshold2].reshape(-1, 1)
+
     variables = df[sr_vars].to_numpy()
 
-    return target_message, variables, variable_names
+    return (target_message1, target_message2), variables, variable_names
 
-def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, model_type = 'run', variable_names = None):
+def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000, dataset_name = 'charge', save_path = None, message_number = 'run', variable_names = None):
     np.random.seed(290402)
     #get a smaller random subset of points because we have too many edge messages
     idx = np.random.choice(len(target_message), size=num_points, replace=False)
@@ -54,7 +63,7 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
               'maxsize': 23}
 
     if dataset_name == 'charge':
-        config['maxsize']= 35
+        config['maxsize']= 25
         config['parsimony'] = 0.05
 
     
@@ -82,7 +91,7 @@ def perform_sr(target_message, variables, num_points = 5_000, niterations = 1000
         parsimony=config['parsimony'],
         batching=True, 
         output_directory = save_path, 
-        run_id = model_type
+        run_id = message_number
     )
 
 
@@ -104,36 +113,43 @@ def main():
     
     args = parser.parse_args()
     _, _, test_data = load_data(args.dataset_name)
-    save_path = f'pysr_objects/{args.dataset_name}/nit_{args.niterations}'
+    save_path = f'pysr_objects/{args.dataset_name}/nit_{args.niterations}/{args.model_type}'
     os.makedirs(save_path, exist_ok=True)
     if args.model_type == 'all':
-        model_types = ['standard', 'L1', 'bottleneck', 'KL', 'pruning']
+        # model_types = ['standard', 'L1', 'bottleneck', 'KL', 'pruning']
 
-        for model_type in model_types:
-            print(f'Running SR on {model_type} model.')
-            model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
+        # for model_type in model_types:
+        #     print(f'Running SR on {model_type} model.')
+        #     model = load_model(dataset_name=args.dataset_name, model_type=model_type, num_epoch=args.num_epoch)
     
-            target_message, variables, names = get_pysr_variables(model, test_data)
+        #     target_messages, variables, names = get_pysr_variables(model, test_data)
+        #     target_message1, target_message2 = target_messages
 
-            regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                        niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=model_type, variable_names= names)
+        #     regressor = perform_sr(target_message, variables, num_points = args.num_points,
+        #                 niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=model_type, variable_names= names)
 
-            metrics = {'best_eqn': regressor.get_best()['equation'], 
-                    'num_points': args.num_points,
-                    'niterations': args.niterations,
-                    'GNN_epochs': args.num_epoch
-                    }
+        #     metrics = {'best_eqn': regressor.get_best()['equation'], 
+        #             'num_points': args.num_points,
+        #             'niterations': args.niterations,
+        #             'GNN_epochs': args.num_epoch
+        #             }
             
-            with open(f'{save_path}/{model_type}_sr_metrics.json', 'w') as f:
-                json.dump(metrics, f, indent = 2)
+        #     with open(f'{save_path}/{model_type}_sr_metrics.json', 'w') as f:
+        #         json.dump(metrics, f, indent = 2)
 
-            print(regressor.get_best()['equation'])
+        #     print(regressor.get_best()['equation'])
+        print('all not supported right now')
     else:
         model = load_model(dataset_name=args.dataset_name, model_type=args.model_type, num_epoch=args.num_epoch)
-        target_message, variables, names = get_pysr_variables(model, test_data)
+        target_messages, variables, names = get_pysr_variables(model, test_data)
+        target_message1, target_message2 = target_messages
 
-        regressor = perform_sr(target_message, variables, num_points = args.num_points,
-                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, model_type=args.model_type, variable_names=names)
+        os.makedirs(f'{save_path}/message1', exist_ok=True)
+        os.makedirs(f'{save_path}/message2', exist_ok=True)
+
+        print('Performing SR on target message 1.')
+        regressor = perform_sr(target_message1, variables, num_points = args.num_points,
+                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, message_number='message1', variable_names=names)
 
         metrics = {'best_eqn': regressor.get_best()['equation'], 
                 'num_points': args.num_points,
@@ -141,10 +157,23 @@ def main():
                 'GNN_epochs': args.num_epoch
                 }
         
-        with open(f'{save_path}/{args.model_type}_sr_metrics.json', 'w') as f:
+        with open(f'{save_path}/message_1_sr_metrics.json', 'w') as f:
             json.dump(metrics, f, indent = 2)
 
-        print(regressor.get_best()['equation'])
+        print('Performing SR on target message 2.')
+        regressor = perform_sr(target_message2, variables, num_points = args.num_points,
+                    niterations=args.niterations, dataset_name = args.dataset_name, save_path=save_path, message_number='message2', variable_names=names)
+
+        metrics = {'best_eqn': regressor.get_best()['equation'], 
+                'num_points': args.num_points,
+                'niterations': args.niterations,
+                'GNN_epochs': args.num_epoch
+                }
+        
+        with open(f'{save_path}/message_2_sr_metrics.json', 'w') as f:
+            json.dump(metrics, f, indent = 2)
+
+        # print(regressor.get_best()['equation'])
 
 
 if __name__ == "__main__":
