@@ -614,8 +614,9 @@ def load_model(dataset_name, model_type, num_epoch):
     
     return model
 
-def test(model, test_data, model_type):
+def test(model, test_data):
     input_data, acc = test_data
+    model_type = model.model_type_
     edge_index = get_edge_index(input_data.shape[1])
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
