@@ -54,14 +54,16 @@ def generate_data(sim = 'r1', save = True):
     y = torch.from_numpy(np.concatenate([accel_data[:, i] for i in range(0, s.data.shape[1], 5)]))
 
     if save: 
-        os.makedirs('../datasets', exist_ok=True)
-        save_path = os.path.join(script_dir, f"../datasets/{title}.pt")
+        dataset_dir = os.path.join(script_dir, "../datasets")
+        os.makedirs(dataset_dir, exist_ok=True)
+
+        save_path = os.path.join(dataset_dir, f"{title}.pt")
         torch.save({
-        'X': X,
-        'y': y,
-        'X_shape': X.shape,
-        'y_shape': y.shape
-        }, f"{save_path}")
+            'X': X,
+            'y': y,
+            'X_shape': X.shape,
+            'y_shape': y.shape
+        }, save_path)
 
     return X, y
 
