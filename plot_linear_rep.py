@@ -351,9 +351,10 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
 
         title = f"{params[i][1]:.2g} Fx + {params[i][2]:.2g} Fy + {params[i][0]:.2g}"
         ax[i].grid(True)
-        ax[i].set_xlabel("Linear combination of forces", fontsize = 12)
-        ax[i].set_ylabel(f"Message element {i+1}", fontsize = 12)
-        ax[i].set_title(f"R2 Score {r2:.5g}\n{title}", fontsize = 12)
+        ax[i].tick_params(axis='both', labelsize=15)
+        ax[i].set_xlabel("Linear combination of forces", fontsize = 20)
+        ax[i].set_ylabel(f"Message element {i+1}", fontsize = 20)
+        # ax[i].set_title(f"R2 Score {r2:.5g}\n{title}", fontsize = 12)
     
     plt.tight_layout()
     plt.savefig(f'{save_path}/epoch_{epochs}.png', dpi = 300)
