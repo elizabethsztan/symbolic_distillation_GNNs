@@ -55,6 +55,7 @@ def generate_data(sim = 'r1', save = True):
 
     if save: 
         save_path = os.path.join(script_dir, f"../datasets/{title}.pt")
+        os.makedirs(save_path, exist_ok=True)
         torch.save({
         'X': X,
         'y': y,
