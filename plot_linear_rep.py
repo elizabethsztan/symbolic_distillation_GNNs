@@ -188,6 +188,17 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
     
     #masks residual outliers
     def percentile_sum(x):
+        """
+        Compute the sum of values between the minimum and 90th percentile,
+        scaled to account for the fraction of included values.
+
+        Args:
+            x : array-like. Input array, can be of any shape.
+
+        Returns:
+            float: The sum of values within the specified range, divided by the fraction
+                    of values retained (to correct for masking).
+        """
         x = x.ravel()
         bot = x.min()
         top = np.percentile(x, 90)
@@ -196,6 +207,15 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         return x[mask].sum() / frac_good
     
     def percentile_mask(x):
+        """
+        Generate a boolean mask for values between the minimum and 90th percentile.
+
+        Args:
+            x (array-like): any array
+
+        Returns:
+            mask: masks for the 10% outliers
+        """
         bot = x.min()
         top = np.percentile(x, 90)
         mask = (x >= bot) & (x <= top)
@@ -214,9 +234,9 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
             tuple: (lin_combo, params, biases) - predictions, coefficients, and intercepts
         """
         
-        def linear_transformation_2d(alpha):
+        def objective_function(alpha):
             """
-            Objective function for 2D linear transformation optimisation.
+            Objective function for robust linear regression.
             
             Args:
                 alpha (np.array): Parameters [a00, a01, bias0, a10, a11, bias1]
@@ -236,7 +256,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
             
             return score
         
-        def get_predictions_2d(alpha):
+        def get_predictions(alpha):
             """
             Get predictions from optimised parameters.
             
@@ -254,7 +274,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         initial_params = np.ones(6)
         
         #optimise
-        min_result = minimize(linear_transformation_2d, initial_params, method='Powell')
+        min_result = minimize(objective_function, initial_params, method='Powell')
         print('robust score: ', min_result.fun/len(msgs_to_compare)) #lower is better
         
         #get params
@@ -264,7 +284,7 @@ def fit_messages(df, msg_array, sim='spring', dim=2, robust = True):
         biases = np.array([alpha[2], alpha[5]])  
         
         #get linear combinations
-        lin_combo = get_predictions_2d(alpha)
+        lin_combo = get_predictions(alpha)
         
         return lin_combo, params, biases
 
@@ -403,9 +423,18 @@ def plot_linear_representation (model, input_data, sim='spring', model_type = 'L
     return (r2_scores, r2_scores_w_outliers), fig
 
 def pruning_r2_scores(input_data, sim='charge', num_epoch = 100):
+    """
+    Generates R2 scores and plots for the pruning experiments
+
+    Args:
+        input_data (tuple): Tuple of (X_test, y_test) test data
+        sim (str, optional): _description_. Defaults to 'charge'.
+        num_epoch (int, optional): _description_. Defaults to 100.
+    """
     schedules = ['exp', 'linear', 'cosine']
     end_epoch_fracs = [0.65, 0.75, 0.85]
 
+    #make save path
     save_path = f'linrepr_plots/pruning_experiments/{sim}'
     os.makedirs(save_path, exist_ok=True)
     r2_scores = {}
