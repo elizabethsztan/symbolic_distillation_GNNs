@@ -7,7 +7,47 @@ We firstly validate whether the GNNs learn the true forces by performing a linea
 We have extended on the original project by introducing a new model variation, the pruning model, where the dimensionality of the messages decreases throughout training.\
 We have also created a new demo Colab notebook, `demo.ipynb`, where the user can test the pipeline on any of the interaction forces or model variations, as an attempt to increase the reproducibility of the pipeline. 
 
-## Colab Notebook 
+## Navigating the repo
+```
+eszt2
+├── LICENSE
+|
+├── README.md
+|
+├── demo.ipynb #demo colab
+|
+├── linrepr_plots/ #linear combination plots and R2 scores stored here
+|
+├── media_for_readme/ #folder for the images in this README
+|
+├── model.py #GNN PyTorch Geometric models
+|
+├── plot_linear_rep.py #plot the linear combination of forces and calculate R2
+|
+├── pruning_experiments.py #run the pruning hyperparamter experiments
+|
+├── report_plots/ #plots for the report
+|
+├── requirements.txt #install dependencies 
+|
+├── simulations/ #code for simulations here
+|
+├── symbolic_reg.py #symbolic regression using PySR
+|
+├── test_models.py #get prediction losses on trained models
+|
+├── train_models_charge.py #train models on charge dataset
+|
+├── train_models_r1.py #train models on r1 dataset
+|
+├── train_models_r2.py #train models on r2 dataset
+|
+├── train_models_spring.py #train models on spring dataset
+|
+└── utils.py #contains code on making train/test/val data and loading it
+```
+
+## Colab notebook 
 We recommend you to view the accompanying Colab notebook, `demo.ipynb`, to recreate the pipeline. The notebook mounts to your Google Drive and saves all model weights to your drive directly. \
 If you want to run the code locally on your system, please see below. 
 
@@ -64,7 +104,8 @@ To train the models without `wandb` logging:
 ```bash
 python3 train_models_spring.py --save --epoch 100
 ```
-The model weights are saved at `model_weights\{sim}\{model_type}`. There is also a metrics file which has the training configuration as well as the train and validation set loss saved in the same folder. 
+The model weights are saved at `model_weights\{sim}\{model_type}`. There is also a metrics file which has the training configuration as well as the train and validation set loss saved in the same folder. \
+When running a training script for the first time, it automatically creates a train/val/test split of your data located in `train_val_test_data/{sim}`. But if this already exists, then the script will load in the training and validation data from this folder. 
 
 ## Plotting the linear combination of forces and calculating $R^2$ values
 To verify that the GNNs have learnt the true forces, we can perform a linear regression on the true forces to fit the two most important messages. We pick the most important messages as the two that have the highest standard deviation over the test set (for standard and L1 models) or the highest KL divergence (for the KL model). The pruning and bottleneck model already have the message dimensions matching the dimensionality of the system. \
