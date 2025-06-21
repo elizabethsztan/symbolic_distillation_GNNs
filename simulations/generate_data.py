@@ -67,11 +67,24 @@ def generate_data(sim = 'r1', save = True):
 
     return X, y
 
-# def load_data(path):
-#     data = torch.load(f"{path}.pt")
-#     return data['X'], data['y']
 
 def main():
+    """
+    Main function to generate physics simulation datasets via command line interface.
+    
+    Command line arguments:
+        --sim (str): Simulation type to generate. Must be one of: 'charge', 'r2', 'r1', 'spring'
+        --save: Flag to save generated dataset
+        
+    Workflow:
+        1. Parses command line arguments for simulation type and save option
+        2. Calls generate_data() with specified parameters
+        3. Dataset is automatically saved to ../datasets/ directory if --save flag is used
+        
+    Output:
+        - Saves data as .pt file with naming convention: {sim}_n={n}_dim={dim}_nt={nt}_dt={dt}.pt
+        - File contains input features (X) and acceleration targets (y) as torch tensors
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--sim", type=str, required=True)
     parser.add_argument("--save", action='store_true')
