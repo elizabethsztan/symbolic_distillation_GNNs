@@ -173,6 +173,22 @@ class NBodyGNN(MessagePassing):
         return loss
     
 class BottleneckGN(NBodyGNN):
+    """
+    Bottleneck Graph Neural Network with constrained message dimensionality.
+    
+    Inherits from NBodyGNN but constrains message dimensions to match the 
+    acceleration dimension (typically 2D), creating an information bottleneck 
+    that forces the model to learn more efficient representations.
+    
+    Args:
+        node_dim (int): Dimensionality of node features (default: 6)
+        acc_dim (int): Dimensionality of acceleration output (default: 2)
+        hidden_dim (int): Hidden layer dimensions for MLPs (default: 300)
+        
+    Attributes:
+        model_type_ (str): Set to 'bottleneck'
+        message_dim_ (int): Set to acc_dim to create information bottleneck
+    """
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
         self.model_type_ = 'bottleneck'
@@ -204,6 +220,26 @@ class BottleneckGN(NBodyGNN):
         self.hidden_dim_ = hidden_dim
 
 class KLGN(NBodyGNN):
+    """
+    Kullback-Leibler regularized Graph Neural Network with variational messages.
+    
+    Implements variational message passing where messages are sampled from 
+    learned distributions. Uses KL divergence regularisation to encourage 
+    sparse and interpretable message representations.
+    
+    Args:
+        node_dim (int): Dimensionality of node features (default: 6)
+        acc_dim (int): Dimensionality of acceleration output (default: 2)
+        hidden_dim (int): Hidden layer dimensions for MLPs (default: 300)
+        
+    Attributes:
+        model_type_ (str): Set to 'KL'
+        
+    Notes:
+        - Edge model outputs both mean and log-variance for each message dimension
+        - Uses reparameterisation trick during training for backpropagation as we sample msgs
+        - Returns mean values during evaluation (no sampling)
+    """
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
 
@@ -241,15 +277,34 @@ class KLGN(NBodyGNN):
 
         tmp = torch.cat([source_nodes, target_nodes], dim=1)
         messages = self.edge_model(tmp) 
+        #get mus and logvars
         mu = messages[:, 0::2]
         logvar = messages[:,1::2]
 
-        reg_str = 1
+        reg_str = 1 #regularisation strength
         unscaled_reg = reg_str * torch.sum(torch.exp(logvar) + mu**2 - logvar)/2 #reg term is kL div
 
         return loss, unscaled_reg
     
 class L1GN(NBodyGNN):
+    """
+    L1-regularised Graph Neural Network for sparse message learning.
+    
+    Applies L1 regularisation to message activations to encourage sparsity
+    and interpretability in the learned message representations.
+    
+    Args:
+        node_dim (int): Dimensionality of node features (default: 6)
+        acc_dim (int): Dimensionality of acceleration output (default: 2)
+        hidden_dim (int): Hidden layer dimensions for MLPs (default: 300)
+        
+    Attributes:
+        model_type_ (str): Set to 'L1'
+        
+    Notes:
+        - Uses regularisation strength of 1e-2 for L1 penalty
+        - Loss function returns both prediction loss and L1 regularisation term
+    """
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
         self.model_type_ = 'L1'
@@ -268,6 +323,26 @@ class L1GN(NBodyGNN):
         return loss, unscaled_reg #later scale it according to batch size and num_nodes
     
 class PruningGN(NBodyGNN):
+    """
+    Pruning Graph Neural Network with dynamic message dimension reduction.
+    
+    Implements structured pruning of message dimensions during training based
+    on message importance (measured by standard deviation). Gradually reduces
+    message dimensionality according to a specified schedule.
+    
+    Args:
+        node_dim (int): Dimensionality of node features (default: 6)
+        acc_dim (int): Dimensionality of acceleration output (default: 2)
+        hidden_dim (int): Hidden layer dimensions for MLPs (default: 300)
+        
+    Attributes:
+        model_type_ (str): Set to 'pruning'
+        initial_message_dim (int): Starting message dimension (100)
+        target_message_dim (int): Final message dimension (acc_dim)
+        current_message_dim (int): Current active message dimension
+        pruning_schedule (dict): Epoch -> target dimension mapping
+        pruning_mask (torch.Tensor): Boolean mask for active message dimensions
+    """
     def __init__(self, node_dim = 6, acc_dim = 2, hidden_dim = 300):
         super().__init__(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
         self.model_type_ = 'pruning'
@@ -279,6 +354,24 @@ class PruningGN(NBodyGNN):
         self.pruning_mask = torch.ones(self.message_dim_, dtype=torch.bool) #this is set during training
 
     def set_pruning_schedule(self, total_epochs, schedule='exp', end_epoch_frac = 0.75):
+        """
+        Configure the pruning schedule for gradual dimension reduction.
+        
+        Args:
+            total_epochs (int): Total number of training epochs
+            schedule (str): Pruning schedule type - 'exp', 'linear', or 'cosine'
+            end_epoch_frac (float): Fraction of training when pruning ends
+            
+        Schedule Types:
+            - 'exp': Exponential decay with faster initial pruning
+            - 'linear': Linear reduction over time
+            - 'cosine': Cosine annealing schedule
+            
+        Notes:
+            - Pruning stops at end_epoch_frac * total_epochs
+            - Remaining epochs maintain target_message_dim dimensions
+            - Creates self.pruning_schedule dict mapping epochs to target dimensions
+        """
         prune_end_epoch = int(end_epoch_frac * total_epochs)
         # print(prune_end_epoch)
         prune_epochs = prune_end_epoch
@@ -286,6 +379,8 @@ class PruningGN(NBodyGNN):
         dims_to_prune = self.initial_message_dim - self.target_message_dim
         schedule_dict = {}
 
+        #different pruning schedules
+        #exponential decay
         if schedule == 'exp':
             decay_rate = 3.0
             max_decay = 1 - math.exp(-decay_rate)
@@ -299,13 +394,14 @@ class PruningGN(NBodyGNN):
                 target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
                 schedule_dict[epoch] = target_dims
 
+        #linear decay
         elif schedule == 'linear':
             for epoch in range(prune_end_epoch):
                 progress = epoch / prune_epochs
                 dims_pruned = math.ceil(dims_to_prune * progress)
                 target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
                 schedule_dict[epoch] = target_dims
-
+        #cosine decay
         elif schedule == 'cosine':
             for epoch in range(prune_end_epoch):
                 progress = epoch / prune_epochs
@@ -314,7 +410,7 @@ class PruningGN(NBodyGNN):
                 target_dims = max(self.initial_message_dim - dims_pruned, self.target_message_dim)
                 schedule_dict[epoch] = target_dims
 
-        # Keep target_message_dim for the last 1/3 of training
+        #keep target_message_dim for the last part of training
         for epoch in range(prune_end_epoch, total_epochs):
             schedule_dict[epoch] = self.target_message_dim
 
@@ -322,6 +418,24 @@ class PruningGN(NBodyGNN):
 
 
     def update_pruning_mask(self, epoch, sample_data):
+        """
+        Update the pruning mask based on message importance at scheduled epochs.
+        
+        Args:
+            epoch (int): Current training epoch
+            sample_data (list): List of validation Data objects for importance calculation
+            
+        Process:
+            1. Computes messages for all sample data points
+            2. Calculates importance as standard deviation across messages
+            3. Selects top-k most important message dimensions
+            4. Updates pruning mask to keep only important dimensions
+            
+        Notes:
+            - Only called at epochs specified in pruning_schedule
+            - Uses validation data to avoid overfitting to training patterns
+            - Updates both pruning_mask and current_message_dim
+        """
         target_dims = self.pruning_schedule[epoch] #dims we need to reduce active units to
 
         with torch.no_grad():
@@ -351,6 +465,33 @@ class PruningGN(NBodyGNN):
 
 
 def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = True, wandb_log = True):
+    """
+    Train a GNN model with comprehensive logging and validation.
+    
+    Args:
+        model: GNN model instance to train (any of the model types)
+        train_data: Tuple of (input_data, acceleration_data) for training
+        val_data: Tuple of (input_data, acceleration_data) for validation
+        num_epoch (int): Number of training epochs
+        dataset_name (str): Name of dataset for logging and saving (default: 'r2')
+        save (bool): Whether to save model weights and metrics (default: True)
+        wandb_log (bool): Whether to log to Weights & Biases (default: True)
+        
+    Returns:
+        Trained model instance
+        
+    Features:
+        - Adaptive batch size: 64*(4/num_nodes)^2 This is always 64 though because we always have 4 particles
+        - Dynamic learning rate scheduling (Cosine for >30 epochs, OneCycle otherwise)
+        - Special handling for regularized models (KL, L1) and pruning models
+        - Comprehensive logging of training/validation losses
+        - Model checkpointing with full state preservation
+        
+    Notes:
+        - Uses Accelerate for distributed training support
+        - Applies data augmentation during training (position noise)
+        - Validates without augmentation for clean performance metrics
+    """
 
     model_type = model.model_type_
 
@@ -545,6 +686,28 @@ def train(model, train_data, val_data, num_epoch, dataset_name = 'r2', save = Tr
     return model
 
 def create_model(model_type, node_dim=6, acc_dim=2, hidden_dim=300):
+    """
+    Factory function to create GNN models of different types.
+    
+    Args:
+        model_type (str): Type of model to create
+        node_dim (int): Dimensionality of node features (default: 6)
+        acc_dim (int): Dimensionality of acceleration output (default: 2)
+        hidden_dim (int): Hidden layer dimensions for MLPs (default: 300)
+        
+    Returns:
+        GNN model instance of specified type
+        
+    Supported Model Types:
+        - 'standard': Basic NBodyGNN with 100-dimensional messages
+        - 'bottleneck': BottleneckGN with acc_dim-dimensional messages
+        - 'KL': KLGN with variational message passing and KL regularization
+        - 'L1': L1GN with L1 regularization on messages
+        - 'pruning': PruningGN with dynamic message dimension reduction
+        
+    Raises:
+        ValueError: If model_type is not recognized
+    """
     if model_type == 'standard':
         return NBodyGNN(node_dim=node_dim, acc_dim=acc_dim, hidden_dim=hidden_dim)
     elif model_type == 'bottleneck':
@@ -559,39 +722,34 @@ def create_model(model_type, node_dim=6, acc_dim=2, hidden_dim=300):
         raise ValueError(f"Unknown model_type: {model_type}. Must be one of: 'standard', 'bottleneck', 'KL', 'L1', 'pruning'")
     
 
-# def load_model(dataset_name, model_type, num_epoch):
-#     checkpoint = torch.load(f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth')
-#     #create a new model
-#     model = create_model(
-#         model_type=model_type,
-#         node_dim=checkpoint['node_dim'],
-#         acc_dim=checkpoint['acc_dim'],
-#         hidden_dim=checkpoint['hidden_dim'], 
-#     )
-
-#     #load weights
-#     model.load_state_dict(checkpoint['model_state_dict'])
-#     model.eval()
-
-#     # Load pruning-specific attributes
-#     if model_type == 'pruning':
-#         model.pruning_mask = checkpoint['pruning_mask']
-#         model.current_message_dim = checkpoint['current_message_dim']
-#         model.initial_message_dim = checkpoint['initial_message_dim']
-#         model.target_message_dim = checkpoint['target_message_dim']
-
-#     print(f'Model loaded successfully.')
-    
-#     return model
-
 def load_model(dataset_name, model_type, num_epoch):
-    """Load model saved on GPU to CPU"""
+    """
+    Load a trained model from checkpoint with CPU mapping for compatibility.
+    Basically if you train models on colab and move them here it works.
+    
+    Args:
+        dataset_name (str): Name of dataset the model was trained on
+        model_type (str): Type of model ('standard', 'bottleneck', 'KL', 'L1', 'pruning')
+        num_epoch (int): Number of epochs the model was trained for
+        
+    Returns:
+        Loaded model in evaluation mode with restored state
+        
+    Features:
+        - Automatic GPU-to-CPU tensor mapping for cross-device compatibility
+        - Restores model architecture from checkpoint metadata
+        - Special handling for pruning models (restores pruning state)
+        - Sets model to evaluation mode
+        
+    File Structure:
+        Expects: model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth
+    """
     checkpoint = torch.load(
         f'{script_dir}/model_weights/{dataset_name}/{model_type}/epoch_{num_epoch}_model.pth',
-        map_location=torch.device('cpu')  # This maps GPU tensors to CPU
+        map_location=torch.device('cpu')  #maps GPU tensors to CPU
     )
     
-    # Create a new model
+    #create a new model
     model = create_model(
         model_type=model_type,
         node_dim=checkpoint['node_dim'],
@@ -599,11 +757,11 @@ def load_model(dataset_name, model_type, num_epoch):
         hidden_dim=checkpoint['hidden_dim'], 
     )
 
-    # Load weights
+    #load weights
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
-    # Load pruning-specific attributes
+    #load pruning-specific attributes for pruning model
     if model_type == 'pruning':
         model.pruning_mask = checkpoint['pruning_mask']
         model.current_message_dim = checkpoint['current_message_dim']
@@ -615,9 +773,31 @@ def load_model(dataset_name, model_type, num_epoch):
     return model
 
 def test(model, test_data):
-    input_data, acc = test_data
+    """
+    Evaluate model performance on test dataset.
+    
+    Args:
+        model: Trained GNN model instance
+        test_data: Tuple of (input_data, acceleration_data) for testing
+        
+    Returns:
+        float: Average test loss across all test samples
+        
+    Features:
+        - Uses same loss computation as validation (no augmentation)
+        - Handles different model types (standard vs regularised)
+        - Batch processing for memory efficiency
+        - Returns normalised loss per sample
+        
+    Notes:
+        - Model is set to evaluation mode
+        - Uses batch size of 1024 for efficient processing
+        - Prints test loss for immediate feedback
+    """
+    input_data, acc = test_data #load data
     model_type = model.model_type_
     edge_index = get_edge_index(input_data.shape[1])
+    #set up dataloader
     dataset = [Data(x=input_data[i], edge_index=edge_index, y=acc[i]) for i in range(len(input_data))]
     dataloader = DataLoader(dataset, batch_size=1024, shuffle=False)
     
@@ -627,10 +807,10 @@ def test(model, test_data):
     
     with torch.no_grad():
         for datapoints in dataloader:
-            # Get batch size
+            #get batch size
             cur_bs = int(datapoints.batch[-1] + 1)
             
-            # Handle different model types like in validation
+            #handle different model types like in validation
             if model_type in {'standard', 'bottleneck', 'pruning'}:
                 loss = model.loss(datapoints, augment=False)
             else: 
