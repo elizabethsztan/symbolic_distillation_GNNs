@@ -21,23 +21,23 @@ def main():
 
     train_data, val_data, _ = load_and_process(data_path, seed)
 
-    # print("\n=== Testing standard Model ===")
-    # model_type = 'standard'
-    # model = create_model(model_type = model_type)
-    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
-    #               save=args.save, wandb_log=args.wandb_log)
+    print("\n=== Testing standard Model ===")
+    model_type = 'standard'
+    model = create_model(model_type = model_type)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
 
-    # print("\n=== Testing L1 Model ===")
-    # model_type = 'L1'
-    # model = create_model(model_type = model_type)
-    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
-    #               save=args.save, wandb_log=args.wandb_log)
+    print("\n=== Testing L1 Model ===")
+    model_type = 'L1'
+    model = create_model(model_type = model_type)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
 
-    # print("\n=== Testing bottleneck Model ===")
-    # model_type = 'bottleneck'
-    # model = create_model(model_type = model_type)
-    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
-    #               save=args.save, wandb_log=args.wandb_log)
+    print("\n=== Testing bottleneck Model ===")
+    model_type = 'bottleneck'
+    model = create_model(model_type = model_type)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
 
     print("\n=== Testing KL Model ===")
     model_type = 'KL'
@@ -45,12 +45,12 @@ def main():
     model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
                   save=args.save, wandb_log=args.wandb_log)
 
-    # print("\n=== Testing pruning Model ===")
-    # model_type = 'pruning'
-    # model = create_model(model_type = model_type)
-    # model.set_pruning_schedule(args.epoch, schedule='cosine', end_epoch_frac=0.65)
-    # model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
-    #               save=args.save, wandb_log=args.wandb_log)
+    print("\n=== Testing pruning Model ===")
+    model_type = 'pruning'
+    model = create_model(model_type = model_type)
+    model.set_pruning_schedule(args.epoch, schedule='cosine', end_epoch_frac=0.65)
+    model = train(model, train_data=train_data, val_data=val_data, dataset_name = 'charge', num_epoch=args.epoch,
+                  save=args.save, wandb_log=args.wandb_log)
     
     
 
