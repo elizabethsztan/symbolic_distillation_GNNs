@@ -19,7 +19,24 @@ from model import get_edge_index, PruningGN
 script_dir = os.path.dirname(os.path.abspath(__file__))
     
 def train_pruning_models(model, train_data, val_data, num_epoch, dataset_name = 'charge', schedule = 'exp', end_epoch_frac = 0.75, save = True, wandb_log = True):
+    """
+    Train a pruning model with gradual message dimension reduction.
+    
+    Args:
+        model: PruningGN model instance to train
+        train_data: Tuple of (input_data, acceleration_data) for training
+        val_data: Tuple of (input_data, acceleration_data) for validation
+        num_epoch (int): Number of training epochs
+        dataset_name (str): Name of dataset for logging and saving (default: 'charge')
+        schedule (str): Pruning schedule type - 'exp', 'linear', or 'cosine' (default: 'exp')
+        end_epoch_frac (float): Fraction of epochs when pruning ends (default: 0.75)
+        save (bool): Whether to save model weights and metrics (default: True)
+        wandb_log (bool): Whether to log to Weights & Biases (default: True)
+        
+    Returns:
+        PruningGN: Trained model with updated pruning mask
 
+    """
     model_type = model.model_type_
 
     #setup accelerator
@@ -199,28 +216,68 @@ def train_pruning_models(model, train_data, val_data, num_epoch, dataset_name = 
     return model
 
 def load_pruning_models(dataset_name, pruning_schedule, end_epoch_frac, num_epoch):
-        checkpoint = torch.load(
-        f'model_weights/pruning_experiments/{dataset_name}/{pruning_schedule}/end_epoch_frac{end_epoch_frac}_epoch{num_epoch}_model.pth',
-        map_location=torch.device('cpu')  # This maps GPU tensors to CPU
+    """
+    Load a trained pruning model from saved checkpoint.
+    
+    Args:
+        dataset_name (str): Name of dataset the model was trained on
+        pruning_schedule (str): Pruning schedule used during training ('exp', 'linear', 'cosine')
+        end_epoch_frac (float): Fraction of epochs when pruning ended during training
+        num_epoch (int): Number of epochs the model was trained for
+        
+    Returns:
+        PruningGN: Loaded model in evaluation mode with restored pruning state
+        
+    """
+    checkpoint = torch.load(
+    f'model_weights/pruning_experiments/{dataset_name}/{pruning_schedule}/end_epoch_frac{end_epoch_frac}_epoch{num_epoch}_model.pth',
+    map_location=torch.device('cpu')  # This maps GPU tensors to CPU
     )
-        model = create_model(
-            model_type='pruning',
-            node_dim=checkpoint['node_dim'],
-            acc_dim=checkpoint['acc_dim'],
-            hidden_dim=checkpoint['hidden_dim'], 
-        )
-        model.pruning_mask = checkpoint['pruning_mask']
-        model.current_message_dim = checkpoint['current_message_dim']
-        model.initial_message_dim = checkpoint['initial_message_dim']
-        model.target_message_dim = checkpoint['target_message_dim']
+    model = create_model(
+        model_type='pruning',
+        node_dim=checkpoint['node_dim'],
+        acc_dim=checkpoint['acc_dim'],
+        hidden_dim=checkpoint['hidden_dim'], 
+    )
+    #update the configs
+    model.pruning_mask = checkpoint['pruning_mask']
+    model.current_message_dim = checkpoint['current_message_dim']
+    model.initial_message_dim = checkpoint['initial_message_dim']
+    model.target_message_dim = checkpoint['target_message_dim']
 
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
+    #add model weights
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
 
-        return model
+    return model
 
 
 def main():
+    """
+    Main function to run comprehensive pruning experiments across multiple configurations.
+    
+    Command line arguments:
+        --save: Flag to save model weights and training metrics
+        --wandb_log: Flag to enable Weights & Biases logging
+        --epoch (int): Number of training epochs for each experiment
+        
+    Experiment Configuration:
+        - Dataset: Fixed to 'charge' dataset (n=4, dim=2, nt=1000, dt=0.001)
+        - Schedules: Tests 'exp', 'linear', and 'cosine' pruning schedules
+        - End epoch fractions: Tests 0.65, 0.75, and 0.85
+        - Total experiments: 9 combinations (3 schedules × 3 fractions)
+        
+    Workflow:
+        1. Loads and processes charge dataset with fixed seed (290402)
+        2. Runs nested loops over all schedule and end_epoch_frac combinations
+        3. Creates fresh PruningGN model for each experiment
+        4. Trains each model configuration and saves results
+        
+    Output:
+        - Trained models saved in model_weights/pruning_experiments/charge/
+        - Training metrics and logs for each configuration
+        - Wandb experiment tracking (if enabled)
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument('--save', action='store_true')
     parser.add_argument('--wandb_log', action='store_true')
