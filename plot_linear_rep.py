@@ -487,7 +487,7 @@ def main():
     
     Command line arguments:
         --dataset_name: Name of the dataset/simulation type
-        --model_type: Model type to analyse, or 'all' for all model types
+        --model_type: Model type to analyse, or 'all' for all model types. To plot the R2 scores for the pruning experiments, use 'pruning_experiments'
         --num_epoch: Epoch number of the trained model to load
         --cutoff: Optional limit on number of test samples to use (default: 0, use all)
     """
