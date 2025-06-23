@@ -188,3 +188,18 @@ Ensure you pass in the correct `num_epoch` corresponding to how long you trained
 ![demo](media_for_readme/pruning_r2.gif)
 
 The $R^2$ scores are saved in `linrepr_plots\pruning_experiments\r2_scores_epoch_{epoch}.json`. In the same folder, you can also find the individual linear regression plots if you're interested.
+
+## Autogeneration tools
+Claude Sonnet 4 and ChatGPT-4o were used in both the code and report. We have listed below precisely what we used these autogeneration tools for.
+
+**Code:**
+- Writing the docstrings for the functions and classes in the repository. 
+- Writing comments in the code. 
+- Checking for bugs (eg. 'INSERT ERROR MESSAGE what is causing my code to break?')
+- Plotting aid (eg. 'How do I make the axis labels and the ticks larger in Matplotlib?')
+
+**Report:**
+- Drafting sections of the report (eg. 'Help me draft an abstract. Look in particular at the introduction and conclusion INSERT UNFINISHED REPORT')
+- Rephrasing wording (eg. 'Make this paragraph read better INSERT PARAGRAPH')
+- Creating results tables in Latex (eg. 'Help me create a results table in Latex with these results INSERT RESULTS'). 
+- Proof-reading (eg. 'Point out mistakes I made in my paragraph INSERT REPORT PARAGRAPH').
