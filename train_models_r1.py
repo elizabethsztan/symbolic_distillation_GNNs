@@ -8,6 +8,12 @@ import argparse
 
 #split the data into train and test sets
 
+"""
+This script trains all the models on the charge dataset. It is connected to wandb.
+To run 
+$ train_models_r1.py --save --wandb_log --epoch 100
+"""
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--save', action='store_true')
