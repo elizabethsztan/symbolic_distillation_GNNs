@@ -1,5 +1,6 @@
 accelerate==1.6.0
 celluloid==0.2.0
+ipykernel==6.29.5
 ipython==9.2.0
 jax==0.6.0
 matplotlib==3.10.3
