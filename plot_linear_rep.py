@@ -373,9 +373,12 @@ def plot_force_components(r2_scores, lin_combos, msgs_to_compare, params, save_p
         ax[i].grid(True)
         ax[i].tick_params(axis='both', labelsize=15)
         ax[i].set_xlabel("Linear combination of forces", fontsize = 20)
-        ax[i].set_ylabel(f"Message element {i+1}", fontsize = 20)
+        ax[i].set_title(f"Message element {i+1}", fontsize = 20)
         # ax[i].set_title(f"R2 Score {r2:.5g}\n{title}", fontsize = 12)
     
+    ax[0].set_ylabel("Message element", fontsize=20)
+    ax[1].set_yticklabels([])
+    ax[1].tick_params(axis='y', left=False)
     plt.tight_layout()
     plt.savefig(f'{save_path}/epoch_{epochs}.png', dpi = 300)
     return fig
