@@ -28,6 +28,8 @@ eszt2
 |
 ├── report_plots/ #plots for the report
 |
+├── report/ #report and executive summary in here
+|
 ├── requirements.txt #install dependencies 
 |
 ├── simulations/ #code for simulations here
