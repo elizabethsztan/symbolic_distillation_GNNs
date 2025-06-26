@@ -61,9 +61,8 @@ git clone git@gitlab.developers.cam.ac.uk:phy/data-intensive-science-mphil/asses
 ```
 Go to the repository locally:
 ```bash
-cd repo/path/eszt2
+cd eszt2
 ```
-Replace `repo/path` with where you cloned the repository.
 
 2. **Install dependencies**
 Create a new virtual environment and activate it.
