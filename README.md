@@ -145,7 +145,7 @@ The red box shows a successful reconstruction as we expect equations in the form
 ![alt text](media_for_readme/spring_eqn.png)\
 for this sim.
 
-In `message_1_sr_metrics` we save the metrics of the symbolic regression including the 'best equation' as chosen by *PySR* but often this is not the equation that reconstructs the force. \
+In `message_1_sr_metrics` we save the metrics of the symbolic regression including the 'best equation' as chosen by *PySR* but often this is not the equation that reconstructs the force. 
 
 ## Getting prediction losses on test set
 We made a specific script to get the prediction losses on the test set. You need to have made all of the datasets and trained all of your models for 100 epochs (as this is hardcoded into this script). \
