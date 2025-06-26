@@ -6,7 +6,7 @@ def load_and_process(data_dir, seed):
     filename = os.path.basename(data_dir).split('_')[0]
     data_save_path = f'train_val_test_data/{filename}'
     
-    if not os.path.exists(data_save_path): #checks if the data has already been split
+    if not os.path.exists(os.path.join(data_save_path, 'train_data.pt')): #checks if the data has already been split
         os.makedirs(data_save_path, exist_ok=True)
         
         data = torch.load(data_dir)
