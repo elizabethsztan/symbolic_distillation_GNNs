@@ -51,6 +51,7 @@ eszt2
 
 ## Colab notebook 
 We recommend you to view the accompanying Colab notebook, `demo.ipynb`, to recreate the pipeline. The notebook mounts to your Google Drive and saves all model weights to your drive directly. \
+To use this notebook, just download `demo.ipynb` and upload it directly to your Google drive.\
 If you want to run the code locally on your system, please see below. 
 
 ## Setup 
