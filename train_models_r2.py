@@ -23,7 +23,7 @@ def main():
     args = parser.parse_args()
     
     seed = 290402 
-    data_path = 'datasets/r2_n=4_dim=2_nt=1000_dt=0.01.pt'
+    data_path = 'datasets/r2_n=4_dim=2_nt=1000_dt=0.001.pt'
 
     train_data, val_data, _ = load_and_process(data_path, seed)
 
