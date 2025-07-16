@@ -168,7 +168,7 @@ We also varied the point in training at which pruning was completed as part of o
 To choose the best hyperparameter combination, we plot the linear representation of true forces and choose the hyperparameter combination that provides the highest $R^2$.\
 We found that the best hyperparameter combination was to end pruning at 65\% of the way through training and use a cosine decay schedule. This was the hyperparameter combination used for the rest of the project.
 
-1. Train the pruning models
+1. Train the pruning models 
 
 If you want to run the pruning experiments yourself, run:
 ```bash
